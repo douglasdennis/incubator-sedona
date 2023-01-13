@@ -36,9 +36,10 @@ class standardVizOperatorTest extends TestBaseScala {
     it("Generate a single image") {
       spark.sql(
         """
+          |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 256, 256, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000)) ) AS pixel
-        """.stripMargin).createOrReplaceTempView("pixels")
+        """.stripMargin)
       spark.sql(
         """
           |SELECT pixel, count(*) as weight
@@ -68,9 +69,10 @@ class standardVizOperatorTest extends TestBaseScala {
         """.stripMargin).createOrReplaceTempView("boundtable")
       spark.sql(
         """
+          |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(ST_Transform(ST_FlipCoordinates(shape), 'epsg:4326','epsg:3857'), 256, 256, (SELECT ST_Transform(ST_FlipCoordinates(bound), 'epsg:4326','epsg:3857') FROM boundtable))) AS pixel
-        """.stripMargin).createOrReplaceTempView("pixels")
+        """.stripMargin)
       spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val images = spark.sql(
         """
@@ -83,9 +85,10 @@ class standardVizOperatorTest extends TestBaseScala {
     it("Passed the pipeline on points") {
       spark.sql(
         """
+          |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 800, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
-        """.stripMargin).createOrReplaceTempView("pixels")
+        """.stripMargin)
       spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val pixelaggregates = spark.table("pixelaggregates")
       pixelaggregates.show(1)
@@ -94,9 +97,10 @@ class standardVizOperatorTest extends TestBaseScala {
     it("Passed the pipeline on polygons") {
       spark.sql(
         """
+          |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, rate, shape FROM usdata
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 1000, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
-        """.stripMargin).createOrReplaceTempView("pixels")
+        """.stripMargin)
       spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val imageDf = spark.sql(
         """
@@ -112,9 +116,10 @@ class standardVizOperatorTest extends TestBaseScala {
       var zoomLevel = 2
       spark.sql(
         """
+          |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 1000, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
-        """.stripMargin).createOrReplaceTempView("pixels")
+        """.stripMargin)
       spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       spark.sql(
         s"""
