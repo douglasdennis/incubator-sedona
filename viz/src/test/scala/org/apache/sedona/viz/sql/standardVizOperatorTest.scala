@@ -24,6 +24,13 @@ import org.apache.sedona.viz.utils.ImageType
 
 class standardVizOperatorTest extends TestBaseScala {
 
+  val CREATE_PIXEL_AGGREGATES_QUERY = """
+      |CREATE OR REPLACE TEMP VIEW pixelaggregates AS
+      |SELECT pixel, count(*) as weight
+      |FROM pixels
+      |GROUP BY pixel
+    """.stripMargin
+
   describe("SedonaViz SQL function Test") {
 
     it("Generate a single image") {
@@ -64,13 +71,7 @@ class standardVizOperatorTest extends TestBaseScala {
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(ST_Transform(ST_FlipCoordinates(shape), 'epsg:4326','epsg:3857'), 256, 256, (SELECT ST_Transform(ST_FlipCoordinates(bound), 'epsg:4326','epsg:3857') FROM boundtable))) AS pixel
         """.stripMargin).createOrReplaceTempView("pixels")
-      spark.sql(
-        """
-          |CREATE OR REPLACE TEMP VIEW pixelaggregates AS
-          |SELECT pixel, count(*) as weight
-          |FROM pixels
-          |GROUP BY pixel
-        """.stripMargin)
+      spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val images = spark.sql(
         """
           |SELECT ST_EncodeImage(ST_Render(pixel, ST_Colorize(weight, (SELECT max(weight) FROM pixelaggregates)))) AS image, (SELECT ST_AsText(bound) FROM boundtable) AS boundary
@@ -85,13 +86,7 @@ class standardVizOperatorTest extends TestBaseScala {
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 800, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
         """.stripMargin).createOrReplaceTempView("pixels")
-      spark.sql(
-        """
-          |CREATE OR REPLACE TEMP VIEW pixelaggregates AS
-          |SELECT pixel, count(*) as weight
-          |FROM pixels
-          |GROUP BY pixel
-        """.stripMargin)
+      spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val pixelaggregates = spark.table("pixelaggregates")
       pixelaggregates.show(1)
     }
@@ -102,13 +97,7 @@ class standardVizOperatorTest extends TestBaseScala {
           |SELECT pixel, rate, shape FROM usdata
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 1000, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
         """.stripMargin).createOrReplaceTempView("pixels")
-      spark.sql(
-        """
-          |CREATE OR REPLACE TEMP VIEW pixelaggregates AS
-          |SELECT pixel, count(*) as weight
-          |FROM pixels
-          |GROUP BY pixel
-        """.stripMargin)
+      spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val imageDf = spark.sql(
         """
           |SELECT ST_Render(pixel, ST_Colorize(weight, (SELECT max(weight) FROM pixelaggregates))) AS image
@@ -126,13 +115,7 @@ class standardVizOperatorTest extends TestBaseScala {
           |SELECT pixel, shape FROM pointtable
           |LATERAL VIEW EXPLODE(ST_Pixelize(shape, 1000, 1000, ST_PolygonFromEnvelope(-126.790180,24.863836,-64.630926,50.000))) AS pixel
         """.stripMargin).createOrReplaceTempView("pixels")
-      spark.sql(
-        """
-          |CREATE OR REPLACE TEMP VIEW pixelaggregates AS
-          |SELECT pixel, count(*) as weight
-          |FROM pixels
-          |GROUP BY pixel
-        """.stripMargin)
+      spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       spark.sql(
         s"""
           |SELECT pixel, weight, ST_TileName(pixel, $zoomLevel) AS pid
