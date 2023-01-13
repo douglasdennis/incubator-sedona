@@ -29,7 +29,7 @@ import org.apache.sedona.python.wrapper.translation.{
 import org.apache.spark.api.java.{JavaPairRDD, JavaRDD}
 import org.locationtech.jts.geom.Geometry
 
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
 
 object PythonConverter extends GeomSerializer {
 
