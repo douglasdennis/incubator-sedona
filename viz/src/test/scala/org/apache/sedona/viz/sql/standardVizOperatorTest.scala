@@ -71,12 +71,22 @@ class standardVizOperatorTest extends TestBaseScala {
         """
           |CREATE OR REPLACE TEMP VIEW pixels AS
           |SELECT pixel, shape FROM pointtable
-          |LATERAL VIEW EXPLODE(ST_Pixelize(ST_Transform(ST_FlipCoordinates(shape), 'epsg:4326','epsg:3857'), 256, 256, (SELECT ST_Transform(ST_FlipCoordinates(bound), 'epsg:4326','epsg:3857') FROM boundtable))) AS pixel
+          |LATERAL VIEW
+          |  EXPLODE(
+          |    ST_Pixelize(
+          |      ST_Transform(ST_FlipCoordinates(shape), 'epsg:4326', 'epsg:3857'),
+          |      256,
+          |      256,
+          |      (SELECT ST_Transform(ST_FlipCoordinates(bound), 'epsg:4326','epsg:3857') FROM boundtable)
+          |    )
+          |  ) AS pixel
         """.stripMargin)
       spark.sql(CREATE_PIXEL_AGGREGATES_QUERY)
       val images = spark.sql(
         """
-          |SELECT ST_EncodeImage(ST_Render(pixel, ST_Colorize(weight, (SELECT max(weight) FROM pixelaggregates)))) AS image, (SELECT ST_AsText(bound) FROM boundtable) AS boundary
+          |SELECT
+          |  ST_EncodeImage(ST_Render(pixel, ST_Colorize(weight, (SELECT max(weight) FROM pixelaggregates)))) AS image,
+          |  (SELECT ST_AsText(bound) FROM boundtable) AS boundary
           |FROM pixelaggregates
         """.stripMargin)
       images.show(1)
