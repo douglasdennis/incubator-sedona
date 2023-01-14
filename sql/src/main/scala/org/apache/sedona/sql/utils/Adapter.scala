@@ -31,6 +31,8 @@ import org.locationtech.jts.geom.Geometry
 
 object Adapter {
 
+  private val TAB_CHARACTER = "\t"
+
   /**
     * Convert a Spatial DF to a Spatial RDD. The geometry column can be at any place in the DF
     *
@@ -204,7 +206,7 @@ object Adapter {
     geomWithoutUserData.setUserData(null)
 
     if (userData != null)
-      geomWithoutUserData +: userData.asInstanceOf[String].split("\t", -1)
+      geomWithoutUserData +: userData.asInstanceOf[String].split(TAB_CHARACTER, -1)
     else
       Seq(geom)
   }
@@ -237,8 +239,8 @@ object Adapter {
       if (fieldSize > 1) {
         userData = ""
         // Add all attributes into geometry user data
-        for (i <- 0 until geometryColId) userData += f.get(i) + "\t"
-        for (i <- geometryColId + 1 until f.size) userData += f.get(i) + "\t"
+        for (i <- 0 until geometryColId) userData += f.get(i) + TAB_CHARACTER
+        for (i <- geometryColId + 1 until f.size) userData += f.get(i) + TAB_CHARACTER
         userData = userData.dropRight(1)
       }
       geometry.setUserData(userData)
@@ -249,7 +251,7 @@ object Adapter {
   private def getGeomAndFields(geom: Geometry, fieldNames: Seq[String]): (Seq[Geometry], Seq[String]) = {
     if (fieldNames != null && fieldNames.nonEmpty) {
       val userData = "" + geom.getUserData.asInstanceOf[String]
-      val fields = userData.split("\t")
+      val fields = userData.split(TAB_CHARACTER)
       val geomWithoutUserData = geom.copy
       geomWithoutUserData.setUserData(null)
       (Seq(geomWithoutUserData), fields)

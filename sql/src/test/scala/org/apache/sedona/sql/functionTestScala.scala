@@ -41,41 +41,112 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   import sparkSession.implicits._
 
+  val polygonTableName = "polygontable"
+  val testTableName = "testtable"
+  val polygonDfName = "polygondf"
+
+  val geomCol = "geom"
+  val geomACol = "geomA"
+  val geomBCol = "geomB"
+  val idCol = "id"
+
+  val pointOriginWkt = "POINT (0 0)"
+  val pointZeroOneWkt = "POINT (0 1)"
+  val pointOneTwoWkt = "POINT (1 2)"
+  val pointInPolandWkt = "POINT (21 52)"
+
+  val lineStringShortWkt = "LINESTRING (0 0, 1 1, 1 0)"
+  val lineStringRingWkt = "LINESTRING (0 0, 1 1, 1 0, 0 0)"
+  val lineStringShortPlusPolandWkt = "LINESTRING (0 0, 1 1, 1 0, 21 52)"
+  val lineStringZCoordWkt = "LINESTRING(0 5 1, 0 0 1, 0 10 2)"
+
+  val polygonUnitSquareWkt = "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))"
+  val polygonWithHoleWkt = "POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))"
+  val polygonTransformWkt = "POLYGON ((110.54671 55.818002, 110.54671 55.143743, 110.940494 55.143743, 110.940494 55.818002, 110.54671 55.818002))"
+
+  val multiPointBasicWkt = "MULTIPOINT((1 2), (3 4), (5 6), (8 9))"
+
+  val multiLineStringWkt = "MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))"
+  val multiLineStringOneRingWkt = "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10))"
+  val multiLineStringTwoRingsWkt = "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))"
+
+  val multiPolygonWkt = "MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))"
+
+  val geometryCollectionWkt = "GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40), POLYGON ((40 40, 20 45, 45 30, 40 40)))"
+
+  val nullGeomFilter = "geom IS NOT NULL"
+
+  def loadTsvFromPath(path: String): DataFrame = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(path)
+  def loadTsvIntoTable(path: String, tableName: String): Unit = loadTsvFromPath(path).createOrReplaceTempView(tableName)
+
+  def collectWktsFromDf(df: DataFrame): List[String] = df.selectExpr("ST_AsText(geom)").as[String].collect().toList
+
+  def createPolygonTable: Unit = {
+    loadTsvFromPath(mixedWktGeometryInputLocation).selectExpr("ST_GeomFromWKT(_c0) as countyshape").createOrReplaceTempView(polygonTableName)
+  }
+
+  def runCoordExtractionTest(functionName: String, coordTarget: String, results: List[Double]): Unit = {
+      Given("Given polygon, point and linestring dataframe")
+      val pointDF = createSamplePointDf(5, geomCol)
+      val polygonDF = createSamplePolygonDf(5, geomCol)
+      val lineStringDF = createSampleLineStringsDf(5, geomCol)
+
+      When(s"Running ${functionName} function on polygon, point and linestring data frames")
+
+      val points = pointDF
+        .selectExpr(s"${functionName}(geom)")
+        .as[Double]
+        .collect()
+        .toList
+
+      val polygons = polygonDF
+        .selectExpr(s"${functionName}(geom) as ${coordTarget}")
+        .filter(s"${coordTarget} IS NOT NULL")
+        .as[Double]
+        .collect()
+        .toList
+
+      val linestrings = lineStringDF
+        .selectExpr(s"${functionName}(geom) as ${coordTarget}")
+        .filter(s"${coordTarget} IS NOT NULL")
+        .as[Double]
+        .collect()
+        .toList
+
+      Then(s"Point ${coordTarget} coordinates Should match to expected point coordinates")
+
+      points should contain theSameElementsAs results
+
+      And("LineString count should be 0")
+      linestrings.length shouldBe 0
+
+      And("Polygon count should be 0")
+      polygons.length shouldBe 0
+  }
+
   describe("Sedona-SQL Function Test") {
 
     it("Passed ST_ConcaveHull") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_ConcaveHull(polygondf.countyshape, 1, true) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_ConcaveHull(polygontable.countyshape, 1, true) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_ConvexHull") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_ConvexHull(polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_ConvexHull(polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_Buffer") {
-      val polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      val polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      val functionDf = sparkSession.sql("select ST_Buffer(polygondf.countyshape, 1) from polygondf")
+      createPolygonTable
+      val functionDf = sparkSession.sql("select ST_Buffer(polygontable.countyshape, 1) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_Envelope") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_Envelope(polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_Envelope(polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
@@ -109,38 +180,26 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Passed ST_Centroid") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_Centroid(polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_Centroid(polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_Length") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_Length(polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_Length(polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_Area") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_Area(polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_Area(polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
     it("Passed ST_Distance") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      var functionDf = sparkSession.sql("select ST_Distance(polygondf.countyshape, polygondf.countyshape) from polygondf")
+      createPolygonTable
+      var functionDf = sparkSession.sql("select ST_Distance(polygontable.countyshape, polygontable.countyshape) from polygontable")
       assert(functionDf.count() > 0);
     }
 
@@ -155,16 +214,12 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Passed ST_Transform") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      val polygon = "POLYGON ((110.54671 55.818002, 110.54671 55.143743, 110.940494 55.143743, 110.940494 55.818002, 110.54671 55.818002))"
+      val polygon = polygonTransformWkt
       // Floats don't have an exact decimal representation. String format varies across jvm:s. Do an approximate match.
       val forceXYExpect = "POLYGON \\(\\(471596.69167460\\d* 6185916.95119\\d*, 471107.562364\\d* 6110880.97422\\d*, 496207.10915\\d* 6110788.80471\\d*, 496271.3193704\\d* 6185825.6056\\d*, 471596.6916746\\d* 6185916.95119\\d*\\)\\)"
 
       sparkSession.createDataset(Seq(polygon))
-        .withColumn("geom", expr("ST_GeomFromWKT(value)"))
+        .withColumn(geomCol, expr("ST_GeomFromWKT(value)"))
         .createOrReplaceTempView("df")
 
       val forceXYResult = sparkSession.sql(s"""select ST_Transform(ST_FlipCoordinates(ST_geomFromWKT('$polygon')),'EPSG:4326', 'EPSG:32649', false)""").rdd.map(row => row.getAs[Geometry](0).toString).collect()(0)
@@ -172,11 +227,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Passed ST_transform WKT version"){
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
-      val polygon = "POLYGON ((110.54671 55.818002, 110.54671 55.143743, 110.940494 55.143743, 110.940494 55.818002, 110.54671 55.818002))"
+      val polygon = polygonTransformWkt
       val forceXYExpect = "POLYGON \\(\\(471596.6916746\\d* 6185916.95119\\d*, 471107.562364\\d* 6110880.97422\\d*, 496207.10915\\d* 6110788.80471\\d*, 496271.319370\\d* 6185825.6056\\d*, 471596.6916746\\d* 6185916.95119\\d*\\)\\)"
 
       val EPSG_TGT_CRS = CRS.decode("EPSG:32649")
@@ -185,7 +236,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       val EPSG_SRC_WKT = EPSG_SRC_CRS.toWKT()
 
       sparkSession.createDataset(Seq(polygon))
-        .withColumn("geom", expr("ST_GeomFromWKT(value)"))
+        .withColumn(geomCol, expr("ST_GeomFromWKT(value)"))
         .createOrReplaceTempView("df")
 
       val forceXYResult_TGT_WKT = sparkSession.sql(s"""select ST_Transform(ST_FlipCoordinates(ST_geomFromWKT('$polygon')),'EPSG:4326', '$EPSG_TGT_WKT', false)""").rdd.map(row => row.getAs[Geometry](0).toString).collect()(0)
@@ -205,7 +256,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       val epsgFactoryErrorString = EPSG_TGT_WKT.substring(0,EPSG_TGT_WKT.length() - 1)
       val epsgString = "EPSG:4326"
       val epsgNoSuchAuthorityString = "EPSG:9377"
-      val polygon = "POLYGON ((110.54671 55.818002, 110.54671 55.143743, 110.940494 55.143743, 110.940494 55.818002, 110.54671 55.818002))"
+      val polygon = polygonTransformWkt
       import org.locationtech.jts.io.WKTReader
       val reader = new WKTReader
       val polygeom = reader.read(polygon)
@@ -224,32 +275,32 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     it("Passed ST_Intersection - intersects but not contains") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') as a,ST_GeomFromWKT('POLYGON((2 2, 9 2, 9 9, 2 9, 2 2))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val intersec = sparkSession.sql("select ST_Intersection(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val intersec = sparkSession.sql(s"select ST_Intersection(a,b) from ${testTableName}")
       assert(intersec.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((2 8, 8 8, 8 2, 2 2, 2 8))"))
     }
 
     it("Passed ST_Intersection - intersects but left contains right") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON((1 1, 1 5, 5 5, 1 1))') as a,ST_GeomFromWKT('POLYGON((2 2, 2 3, 3 3, 2 2))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val intersec = sparkSession.sql("select ST_Intersection(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val intersec = sparkSession.sql(s"select ST_Intersection(a,b) from ${testTableName}")
       assert(intersec.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((2 2, 2 3, 3 3, 2 2))"))
     }
 
     it("Passed ST_Intersection - intersects but right contains left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON((2 2, 2 3, 3 3, 2 2))') as a,ST_GeomFromWKT('POLYGON((1 1, 1 5, 5 5, 1 1))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val intersec = sparkSession.sql("select ST_Intersection(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val intersec = sparkSession.sql(s"select ST_Intersection(a,b) from ${testTableName}")
       assert(intersec.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((2 2, 2 3, 3 3, 2 2))"))
     }
 
     it("Passed ST_Intersection - not intersects") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON((40 21, 40 22, 40 23, 40 21))') as a,ST_GeomFromWKT('POLYGON((2 2, 9 2, 9 9, 2 9, 2 2))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val intersect = sparkSession.sql("select ST_Intersection(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val intersect = sparkSession.sql(s"select ST_Intersection(a,b) from $testTableName")
       assert(intersect.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON EMPTY"))
     }
 
@@ -317,23 +368,23 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
     it("Passed ST_MakeValid On Valid Polygon") {
 
-      val df = sparkSession.sql("SELECT ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') AS polygon")
+      val df = sparkSession.sql(s"SELECT ST_GeomFromWKT('${polygonUnitSquareWkt}') AS polygon")
 
       val result = df.withColumn("polygon", expr("ST_MakeValid(polygon)")).collect()
 
       assert(result.length == 1)
-      assert(result.take(1)(0).get(0).asInstanceOf[Geometry].toText() == "POLYGON ((1 1, 1 8, 8 8, 8 1, 1 1))")
+      assert(result.take(1)(0).get(0).asInstanceOf[Geometry].toText() == "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))")
     }
 
     it("Passed ST_MakeValid on Invalid LineString") {
 
-      val df = sparkSession.sql("SELECT ST_GeomFromWKT('LINESTRING(1 1, 1 1)') AS geom")
+      val df = sparkSession.sql("SELECT ST_GeomFromWKT('LINESTRING(0 1, 0 1)') AS geom")
 
       val result = df.selectExpr("ST_MakeValid(geom)", "ST_MakeValid(geom, true)").collect()
 
       assert(result.length == 1)
       assert(result.take(1)(0).get(0).asInstanceOf[Geometry].toText() == "LINESTRING EMPTY")
-      assert(result.take(1)(0).get(1).asInstanceOf[Geometry].toText() == "POINT (1 1)")
+      assert(result.take(1)(0).get(1).asInstanceOf[Geometry].toText() == pointZeroOneWkt)
     }
 
     it("Passed ST_SimplifyPreserveTopology") {
@@ -345,14 +396,13 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Passed ST_AsText") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
+      loadTsvIntoTable(mixedWktGeometryInputLocation, polygonTableName)
       var polygonDf = sparkSession.sql("select ST_GeomFromWKT(polygontable._c0) as countyshape from polygontable")
-      polygonDf.createOrReplaceTempView("polygondf")
+      polygonDf.createOrReplaceTempView(polygonDfName)
       var wktDf = sparkSession.sql("select ST_AsText(countyshape) as wkt from polygondf")
       assert(polygonDf.take(1)(0).getAs[Geometry]("countyshape").toText.equals(wktDf.take(1)(0).getAs[String]("wkt")))
-      val wkt = sparkSession.sql("select ST_AsText(ST_SetSRID(ST_Point(1.0,1.0), 3021))").first().getString(0)
-      assert(wkt == "POINT (1 1)", "WKT should not contain SRID")
+      val wkt = sparkSession.sql("select ST_AsText(ST_SetSRID(ST_Point(0.0,1.0), 3021))").first().getString(0)
+      assert(wkt == pointZeroOneWkt, "WKT should not contain SRID")
     }
 
     it("Passed ST_AsText 3D") {
@@ -365,25 +415,25 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
         "MULTILINESTRING Z((10 10 11, 20 20 11, 10 40 11), (40 40 11, 30 30 11, 40 20 11, 30 10 11))",
         "MULTIPOLYGON Z(((40 40 11, 20 45 11, 45 30 11, 40 40 11)), ((20 35 11, 10 30 11, 10 10 11, 30 5 11, 45 20 11, 20 35 11), (30 20 11, 20 15 11, 20 25 11, 30 20 11)))",
         "POLYGON Z((0 0 11, 0 5 11, 5 5 11, 5 0 11, 0 0 11), (1 1 11, 2 1 11, 2 2 11, 1 2 11, 1 1 11))"
-      ).map(wkt => Tuple1(wktReader.read(wkt))).toDF("geom")
+      ).map(wkt => Tuple1(wktReader.read(wkt))).toDF(geomCol)
 
       geometryDf.createOrReplaceTempView("geometrytable")
       var wktDf = sparkSession.sql("select ST_AsText(geom) as wkt from geometrytable")
       val wktWriter = new WKTWriter(3)
-      val expected = geometryDf.collect().map(row => wktWriter.write(row.getAs[Geometry]("geom")))
+      val expected = geometryDf.collect().map(row => wktWriter.write(row.getAs[Geometry](geomCol)))
       val actual = wktDf.collect().map(row => row.getAs[String]("wkt"))
       actual should contain theSameElementsAs expected
     }
 
     it("Passed ST_AsGeoJSON") {
-      val df = sparkSession.sql("SELECT ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') AS polygon")
-      df.createOrReplaceTempView("table")
+      val df = sparkSession.sql(s"SELECT ST_GeomFromWKT('${polygonUnitSquareWkt}') AS polygon")
+      df.createOrReplaceTempView(testTableName)
 
       val geojsonDf = sparkSession.sql(
         """select ST_AsGeoJSON(polygon) as geojson
-          |from table""".stripMargin)
+          |from testtable""".stripMargin)
 
-      val expectedGeoJson = """{"type":"Polygon","coordinates":[[[1.0,1.0],[8.0,1.0],[8.0,8.0],[1.0,8.0],[1.0,1.0]]]}"""
+      val expectedGeoJson = """{"type":"Polygon","coordinates":[[[0.0,0.0],[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]]]}"""
       assert(geojsonDf.first().getString(0) === expectedGeoJson)
     }
 
@@ -409,29 +459,29 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Passed ST_AsGML") {
-      val df = sparkSession.sql("SELECT ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') AS polygon")
-      df.createOrReplaceTempView("table")
+      val df = sparkSession.sql(s"SELECT ST_GeomFromWKT('${polygonUnitSquareWkt}') AS polygon")
+      df.createOrReplaceTempView(testTableName)
 
       val gmlDf = sparkSession.sql(
         """select ST_AsGML(polygon) as geojson
-          |from table""".stripMargin)
+          |from testtable""".stripMargin)
 
       val gml = DocumentBuilderFactory.newInstance.newDocumentBuilder.parse(new InputSource(new StringReader(gmlDf.first().getString(0))))
       val coordinates = XPathFactory.newInstance.newXPath.evaluate("/Polygon/outerBoundaryIs/LinearRing/coordinates", gml)
-      assert(coordinates.trim === "1.0,1.0 8.0,1.0 8.0,8.0 1.0,8.0 1.0,1.0")
+      assert(coordinates.trim === "0.0,0.0 0.0,1.0 1.0,1.0 1.0,0.0 0.0,0.0")
     }
 
     it("Passed ST_AsKML") {
-      val df = sparkSession.sql("SELECT ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') AS polygon")
-      df.createOrReplaceTempView("table")
+      val df = sparkSession.sql(s"SELECT ST_GeomFromWKT('${polygonUnitSquareWkt}') AS polygon")
+      df.createOrReplaceTempView(testTableName)
 
       val kmlDf = sparkSession.sql(
         """select ST_AsKML(polygon) as geojson
-          |from table""".stripMargin)
+          |from testtable""".stripMargin)
 
       val kml = DocumentBuilderFactory.newInstance.newDocumentBuilder.parse(new InputSource(new StringReader(kmlDf.first().getString(0))))
       val coordinates = XPathFactory.newInstance.newXPath.evaluate("/Polygon/outerBoundaryIs/LinearRing/coordinates", kml)
-      assert(coordinates.trim === "1.0,1.0 8.0,1.0 8.0,8.0 1.0,8.0 1.0,1.0")
+      assert(coordinates.trim === "0.0,0.0 0.0,1.0 1.0,1.0 1.0,0.0 0.0,0.0")
     }
 
     it("Passed ST_SRID") {
@@ -441,15 +491,15 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
     it("Passed ST_SetSRID") {
       var df = sparkSession.sql("SELECT ST_GeomFromWKT('POLYGON((1 1, 8 1, 8 8, 1 8, 1 1))') as polygon")
-      df.createOrReplaceTempView("table")
-      df = sparkSession.sql("SELECT ST_SetSRID(polygon, 3021) from table")
+      df.createOrReplaceTempView(testTableName)
+      df = sparkSession.sql("SELECT ST_SetSRID(polygon, 3021) from testtable")
       assert(df.first().get(0).asInstanceOf[Polygon].getSRID == 3021)
     }
 
     it("Passed ST_AsEWKB") {
       var df = sparkSession.sql("SELECT ST_SetSrid(ST_GeomFromWKT('POINT (1 1)'), 3021) as point")
-      df.createOrReplaceTempView("table")
-      df = sparkSession.sql("SELECT ST_AsEWKB(point) from table")
+      df.createOrReplaceTempView(testTableName)
+      df = sparkSession.sql("SELECT ST_AsEWKB(point) from testtable")
       val s = "0101000020cd0b0000000000000000f03f000000000000f03f"
       assert(Hex.encodeHexString(df.first().get(0).asInstanceOf[Array[Byte]]) == s)
     }
@@ -499,39 +549,38 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     it("Passed ST_Difference - part of right overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((0 -4, 4 -4, 4 4, 0 4, 0 -4))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val diff = sparkSession.sql("select ST_Difference(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val diff = sparkSession.sql(s"select ST_Difference(a,b) from ${testTableName}")
       assert(diff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((0 -3, -3 -3, -3 3, 0 3, 0 -3))"))
     }
 
     it("Passed ST_Difference - right not overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, -3 3, 3 3, 3 -3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((5 -3, 7 -3, 7 -1, 5 -1, 5 -3))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val diff = sparkSession.sql("select ST_Difference(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val diff = sparkSession.sql(s"select ST_Difference(a,b) from ${testTableName}")
       assert(diff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((-3 -3, -3 3, 3 3, 3 -3, -3 -3))"))
     }
 
     it("Passed ST_Difference - left contains right") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val diff = sparkSession.sql("select ST_Difference(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val diff = sparkSession.sql(s"select ST_Difference(a,b) from ${testTableName}")
       assert(diff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((-3 -3, -3 3, 3 3, 3 -3, -3 -3), (-1 -1, 1 -1, 1 1, -1 1, -1 -1))"))
     }
 
     it("Passed ST_Difference - right contains left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))') as a,ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as b")
-      testtable.createOrReplaceTempView("testtable")
-      val diff = sparkSession.sql("select ST_Difference(a,b) from testtable")
+      testtable.createOrReplaceTempView(testTableName)
+      val diff = sparkSession.sql(s"select ST_Difference(a,b) from ${testTableName}")
       assert(diff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON EMPTY"))
     }
 
     it("Passed ST_Difference - one null") {
-
-      val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a")
-      testtable.createOrReplaceTempView("testtable")
+      val testtable = sparkSession.sql(s"select ST_GeomFromWKT('${polygonUnitSquareWkt}') as a")
+      testtable.createOrReplaceTempView(testTableName)
       val diff = sparkSession.sql("select ST_Difference(a,null) from testtable")
       assert(diff.first().get(0) == null)
     }
@@ -539,48 +588,48 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     it("Passed ST_SymDifference - part of right overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))') as a,ST_GeomFromWKT('POLYGON ((0 -2, 2 -2, 2 0, 0 0, 0 -2))') as b")
-      testtable.createOrReplaceTempView("sym_table")
-      val symDiff = sparkSession.sql("select ST_SymDifference(a,b) from sym_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val symDiff = sparkSession.sql(s"select ST_SymDifference(a,b) from ${testTableName}")
       assert(symDiff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("MULTIPOLYGON (((0 -1, -1 -1, -1 1, 1 1, 1 0, 0 0, 0 -1)), ((0 -1, 1 -1, 1 0, 2 0, 2 -2, 0 -2, 0 -1)))"))
     }
 
     it("Passed ST_SymDifference - right not overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((5 -3, 7 -3, 7 -1, 5 -1, 5 -3))') as b")
-      testtable.createOrReplaceTempView("sym_table")
-      val symDiff = sparkSession.sql("select ST_SymDifference(a,b) from sym_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val symDiff = sparkSession.sql(s"select ST_SymDifference(a,b) from ${testTableName}")
       assert(symDiff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("MULTIPOLYGON (((-3 -3, -3 3, 3 3, 3 -3, -3 -3)), ((5 -3, 5 -1, 7 -1, 7 -3, 5 -3)))"))
     }
 
     it("Passed ST_SymDifference - contains") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))') as b")
-      testtable.createOrReplaceTempView("sym_table")
-      val symDiff = sparkSession.sql("select ST_SymDifference(a,b) from sym_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val symDiff = sparkSession.sql(s"select ST_SymDifference(a,b) from ${testTableName}")
       assert(symDiff.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((-3 -3, -3 3, 3 3, 3 -3, -3 -3), (-1 -1, 1 -1, 1 1, -1 1, -1 -1))"))
     }
 
     it("Passed ST_SymDifference - one null") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a")
-      testtable.createOrReplaceTempView("sym_table")
-      val symDiff = sparkSession.sql("select ST_SymDifference(a,null) from sym_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val symDiff = sparkSession.sql(s"select ST_SymDifference(a,null) from ${testTableName}")
       assert(symDiff.first().get(0) == null)
     }
 
     it("Passed ST_Union - part of right overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a, ST_GeomFromWKT('POLYGON ((-2 1, 2 1, 2 4, -2 4, -2 1))') as b")
-      testtable.createOrReplaceTempView("union_table")
-      val union = sparkSession.sql("select ST_Union(a,b) from union_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val union = sparkSession.sql(s"select ST_Union(a,b) from ${testTableName}")
       assert(union.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("POLYGON ((2 3, 3 3, 3 -3, -3 -3, -3 3, -2 3, -2 4, 2 4, 2 3))"))
     }
 
     it("Passed ST_Union - right not overlaps left") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a,ST_GeomFromWKT('POLYGON ((5 -3, 7 -3, 7 -1, 5 -1, 5 -3))') as b")
-      testtable.createOrReplaceTempView("union_table")
-      val union = sparkSession.sql("select ST_Union(a,b) from union_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val union = sparkSession.sql(s"select ST_Union(a,b) from ${testTableName}")
       println(union.take(1)(0).get(0).asInstanceOf[Geometry].toText)
       assert(union.take(1)(0).get(0).asInstanceOf[Geometry].toText.equals("MULTIPOLYGON (((-3 -3, -3 3, 3 3, 3 -3, -3 -3)), ((5 -3, 5 -1, 7 -1, 7 -3, 5 -3)))"))
     }
@@ -588,8 +637,8 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     it("Passed ST_Union - one null") {
 
       val testtable = sparkSession.sql("select ST_GeomFromWKT('POLYGON ((-3 -3, 3 -3, 3 3, -3 3, -3 -3))') as a")
-      testtable.createOrReplaceTempView("union_table")
-      val union = sparkSession.sql("select ST_Union(a,null) from union_table")
+      testtable.createOrReplaceTempView(testTableName)
+      val union = sparkSession.sql(s"select ST_Union(a,null) from ${testTableName}")
       assert(union.first().get(0) == null)
     }
 
@@ -597,7 +646,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
       val pointDataFrame = samplePoints
         .map(point => (point, samplePoints.tail.head))
-        .toDF("geomA", "geomB")
+        .toDF(geomACol, geomBCol)
 
       pointDataFrame.selectExpr("ST_Azimuth(geomA, geomB)")
         .as[Double]
@@ -613,12 +662,12 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       val geometries = Seq(
         ("POINT(25.0 45.0)", "POINT(75.0 100.0)"),
         ("POINT(75.0 100.0)", "POINT(25.0 45.0)"),
-        ("POINT(0.0 0.0)", "POINT(25.0 0.0)"),
-        ("POINT(25.0 0.0)", "POINT(0.0 0.0)"),
-        ("POINT(0.0 25.0)", "POINT(0.0 0.0)"),
-        ("POINT(0.0 0.0)", "POINT(0.0 25.0)")
+        (pointOriginWkt, "POINT(25.0 0.0)"),
+        ("POINT(25.0 0.0)", pointOriginWkt),
+        ("POINT(0.0 25.0)", pointOriginWkt),
+        (pointOriginWkt, "POINT(0.0 25.0)")
       ).map({ case (wktA, wktB) => (wktReader.read(wktA), wktReader.read(wktB)) })
-        .toDF("geomA", "geomB")
+        .toDF(geomACol, geomBCol)
 
       geometries
         .selectExpr("ST_Azimuth(geomA, geomB)")
@@ -631,104 +680,30 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     it("Should pass ST_X") {
-
-      Given("Given polygon, point and linestring dataframe")
-      val pointDF = createSamplePointDf(5, "geom")
-      val polygonDF = createSamplePolygonDf(5, "geom")
-      val lineStringDF = createSampleLineStringsDf(5, "geom")
-
-      When("Running ST_X function on polygon, point and linestring data frames")
-
-      val points = pointDF
-        .selectExpr("ST_X(geom)")
-        .as[Double]
-        .collect()
-        .toList
-
-      val polygons = polygonDF
-        .selectExpr("ST_X(geom) as x")
-        .filter("x IS NOT NULL")
-        .as[Double]
-        .collect()
-        .toList
-
-      val linestrings = lineStringDF
-        .selectExpr("ST_X(geom) as x")
-        .filter("x IS NOT NULL")
-        .as[Double]
-        .collect()
-        .toList
-
-      Then("Point x coordinates Should match to expected point coordinates")
-
-      points should contain theSameElementsAs List(-71.064544, -88.331492, 88.331492, 1.0453, 32.324142)
-
-      And("LineString count should be 0")
-      linestrings.length shouldBe 0
-
-      And("Polygon count should be 0")
-      polygons.length shouldBe 0
+      runCoordExtractionTest("ST_X", "x", List(-71.064544, -88.331492, 88.331492, 1.0453, 32.324142))
     }
 
     it("Should pass ST_Y") {
-
-
-      Given("Given polygon, point and linestring dataframe")
-      val pointDF = createSamplePointDf(5, "geom")
-      val polygonDF = createSamplePolygonDf(5, "geom")
-      val lineStringDF = createSampleLineStringsDf(5, "geom")
-
-      When("Running ST_Y function on polygon, point and linestring data frames")
-
-      val points = pointDF
-        .selectExpr("ST_Y(geom)")
-        .as[Double]
-        .collect()
-        .toList
-
-      val polygons = polygonDF
-        .selectExpr("ST_Y(geom) as y")
-        .filter("y IS NOT NULL")
-        .as[Double]
-        .collect()
-        .toList
-
-      val linestrings = lineStringDF
-        .selectExpr("ST_Y(geom) as y")
-        .filter("y IS NOT NULL")
-        .as[Double]
-        .collect()
-        .toList
-
-      Then("Point y coordinates Should match to expected point coordinates")
-
-      points should contain theSameElementsAs List(42.28787, 32.324142, 32.324142, 5.3324324, -88.331492)
-
-      And("LineString count should be 0")
-      linestrings.length shouldBe 0
-
-      And("Polygon count should be 0")
-      polygons.length shouldBe 0
-
+      runCoordExtractionTest("ST_Y", "y", List(42.28787, 32.324142, 32.324142, 5.3324324, -88.331492))
     }
 
     it("Should pass ST_Z") {
 
-      Given("Given polygon, point and linestring dataframe")
+      Given("Given polygon, point and linestring dataframe with valid Z coordinates")
       val pointDF =  Seq(
         "POINT Z (1 2 3)"
-      ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+      ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
       val polygonDF =  Seq(
         "POLYGON Z ((0 0 2, 0 1 2, 1 1 2, 1 0 2, 0 0 2))"
-      ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+      ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
       val lineStringDF =  Seq(
         "LINESTRING Z (0 0 1, 0 1 2)"
-      ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+      ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
       When("Running ST_Z function on polygon, point and linestring data frames")
 
       val points = pointDF
-        .selectExpr("ST_Z(geom) as z")
+        .selectExpr("ST_Z(geom)")
         .as[Double]
         .collect()
         .toList
@@ -762,24 +737,26 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     it("Should pass ST_StartPoint function") {
       Given("Polygon Data Frame, Point DataFrame, LineString Data Frame")
 
-      val pointDF = createSamplePointDf(5, "geom")
-      val polygonDF = createSamplePolygonDf(5, "geom")
-      val lineStringDF = createSampleLineStringsDf(5, "geom")
+      val pointDF = createSamplePointDf(5, geomCol)
+      val polygonDF = createSamplePolygonDf(5, geomCol)
+      val lineStringDF = createSampleLineStringsDf(5, geomCol)
+
+      val startPoint = "ST_StartPoint(geom) as geom"
 
       When("Running ST_StartPoint on Point Data Frame, LineString DataFrame and Polygon DataFrame")
       val points = pointDF
-        .selectExpr("ST_StartPoint(geom) as geom")
-        .filter("geom IS NOT NULL")
+        .selectExpr(startPoint)
+        .filter(nullGeomFilter)
         .toSeq[Geometry]
 
       val polygons = polygonDF
-        .selectExpr("ST_StartPoint(geom) as geom")
-        .filter("geom IS NOT NULL")
+        .selectExpr(startPoint)
+        .filter(nullGeomFilter)
         .toSeq[Geometry]
 
       val linestrings = lineStringDF
-        .selectExpr("ST_StartPoint(geom) as geom")
-        .filter("geom IS NOT NULL")
+        .selectExpr(startPoint)
+        .filter(nullGeomFilter)
         .toSeq[Geometry]
 
       Then("Linestring should result in list of points")
@@ -794,13 +771,13 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   }
 
   it("Should pass ST_Boundary") {
-    Given("Sample geometry data frame")
+    Given("Dataframe with linestrings and polygons")
     val geometryTable = Seq(
       "LINESTRING(1 1,0 0, -1 1)",
       "LINESTRING(100 150,50 60, 70 80, 160 170)",
       "POLYGON (( 10 130, 50 190, 110 190, 140 150, 150 80, 100 10, 20 40, 10 130 ),( 70 40, 100 50, 120 80, 80 110, 50 90, 70 40 ))",
       "POLYGON((1 1,0 0, -1 1, 1 1))"
-    ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+    ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
     When("Using ST_Boundary function")
 
@@ -808,8 +785,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
     Then("Result should match List of boundary geometries")
 
-    boundaryTable.selectExpr("ST_AsText(geom)")
-      .as[String].collect().toList should contain theSameElementsAs List(
+    collectWktsFromDf(boundaryTable) should contain theSameElementsAs List(
       "MULTIPOINT ((1 1), (-1 1))",
       "MULTIPOINT ((100 150), (160 170))",
       "MULTILINESTRING ((10 130, 50 190, 110 190, 140 150, 150 80, 100 10, 20 40, 10 130), (70 40, 100 50, 120 80, 80 110, 50 90, 70 40))",
@@ -819,48 +795,43 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it("Should pass ST_EndPoint") {
     Given("Dataframe with linestring and dataframe with other geometry types")
-    val lineStringDataFrame = createSampleLineStringsDf(5, "geom")
-    val otherGeometryDataFrame = createSamplePolygonDf(5, "geom")
-      .union(createSamplePointDf(5, "geom"))
+    val lineStringDataFrame = createSampleLineStringsDf(5, geomCol)
+    val otherGeometryDataFrame = createSamplePolygonDf(5, geomCol)
+      .union(createSamplePointDf(5, geomCol))
 
     When("Using ST_EndPoint")
     val pointDataFrame = lineStringDataFrame.selectExpr("ST_EndPoint(geom) as geom")
-      .filter("geom IS NOT NULL")
+      .filter(nullGeomFilter)
     val emptyDataFrame = otherGeometryDataFrame.selectExpr("ST_EndPoint(geom) as geom")
-      .filter("geom IS NOT NULL")
+      .filter(nullGeomFilter)
 
     Then("Linestring Df should result with Point Df and other geometry DF as empty DF")
-    pointDataFrame.selectExpr("ST_AsText(geom)")
-      .as[String]
-      .collect()
-      .toList should contain theSameElementsAs expectedEndingPoints
+    collectWktsFromDf(pointDataFrame) should contain theSameElementsAs expectedEndingPoints
     emptyDataFrame.count shouldBe 0
   }
 
   it("Should pass ST_ExteriorRing") {
     Given("Polygon DataFrame and other geometries DataFrame")
-    val polygonDf = createSimplePolygons(5, "geom")
+    val polygonDf = createSimplePolygons(5, geomCol)
       .union(Seq("POLYGON((0 0, 1 1, 1 2, 1 1, 0 0))")
-        .map(wkt => Tuple1(wktReader.read(wkt))).toDF("geom")
+        .map(wkt => Tuple1(wktReader.read(wkt))).toDF(geomCol)
       )
 
-    val otherGeometryDf = createSampleLineStringsDf(5, "geom")
-      .union(createSamplePointDf(5, "geom"))
+    val otherGeometryDf = createSampleLineStringsDf(5, geomCol)
+      .union(createSamplePointDf(5, geomCol))
 
     When("Using ST_ExteriorRing on Polygon Frame and Other geometry frame")
     val lineStringDf = polygonDf
       .selectExpr("ST_ExteriorRing(geom) as geom")
-      .filter("geom IS NOT NULL")
+      .filter(nullGeomFilter)
 
     val emptyDf = otherGeometryDf
       .selectExpr("ST_ExteriorRing(geom) as geom")
-      .filter("geom IS NOT NULL")
+      .filter(nullGeomFilter)
 
     Then("Polygon Dataframe should product LineString Data Frame and others should be null")
 
-    lineStringDf.selectExpr("ST_AsText(geom)")
-      .as[String]
-      .collect() should contain theSameElementsAs List(
+    collectWktsFromDf(lineStringDf) should contain theSameElementsAs List(
       "LINESTRING (0 0, 0 1, 1 1, 1 0, 0 0)", "LINESTRING (0 0, 1 1, 1 2, 1 1, 0 0)"
     )
 
@@ -868,12 +839,12 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   }
 
   it("Should pass ST_GeometryN") {
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 0) shouldBe Some("POINT (1 2)")
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 1) shouldBe Some("POINT (3 4)")
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 2) shouldBe Some("POINT (5 6)")
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 3) shouldBe Some("POINT (8 9)")
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 4) shouldBe None
-    calculateGeometryN("MULTIPOINT((1 2), (3 4), (5 6), (8 9))", 4) shouldBe None
+    calculateGeometryN(multiPointBasicWkt, 0) shouldBe Some(pointOneTwoWkt)
+    calculateGeometryN(multiPointBasicWkt, 1) shouldBe Some("POINT (3 4)")
+    calculateGeometryN(multiPointBasicWkt, 2) shouldBe Some("POINT (5 6)")
+    calculateGeometryN(multiPointBasicWkt, 3) shouldBe Some("POINT (8 9)")
+    calculateGeometryN(multiPointBasicWkt, 4) shouldBe None
+    calculateGeometryN(multiPointBasicWkt, 4) shouldBe None
 
   }
 
@@ -881,19 +852,18 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     Given("DataFrame with polygons and DataFrame with other geometries ")
     val polygonDf = Seq(
       "POLYGON((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1), (1 3, 2 3, 2 4, 1 4, 1 3), (3 3, 4 3, 4 4, 3 4, 3 3))")
-      .map(wkt => Tuple1(wktReader.read(wkt))).toDF("geom")
+      .map(wkt => Tuple1(wktReader.read(wkt))).toDF(geomCol)
 
-    val otherGeometry = createSamplePointDf(5, "geom")
-      .union(createSampleLineStringsDf(5, "geom"))
+    val otherGeometry = createSamplePointDf(5, geomCol)
+      .union(createSampleLineStringsDf(5, geomCol))
 
     When("Using ST_InteriorRingN")
     val wholes = (0 until 3).flatMap(
-      index => polygonDf.selectExpr(s"ST_InteriorRingN(geom, $index) as geom")
-        .selectExpr("ST_AsText(geom)").as[String].collect()
+      index => collectWktsFromDf(polygonDf.selectExpr(s"ST_InteriorRingN(geom, $index) as geom"))
     )
 
     val emptyDf = otherGeometry.selectExpr("ST_InteriorRingN(geom, 1) as geom")
-      .filter("geom IS NOT NULL")
+      .filter(nullGeomFilter)
 
     Then("Polygon with wholes should return Nth whole and other geometries should produce null values")
 
@@ -908,79 +878,78 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   it("Should pass ST_Dumps") {
     Given("Geometries Df")
     val geometryDf = Seq(
-      "Point(21 52)",
-      "Polygon((0 0, 0 1, 1 1, 1 0, 0 0))",
-      "Linestring(0 0, 1 1, 1 0)",
-      "MULTIPOINT ((10 40), (40 30), (20 20), (30 10))",
-      "MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))",
-      "MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))",
+      pointInPolandWkt,
+      lineStringShortPlusPolandWkt,
+      lineStringShortWkt,
+      multiPointBasicWkt,
+      multiPolygonWkt,
+      multiLineStringWkt,
       "MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)), ((20 35, 10 30, 10 10, 30 5, 45 20, 20 35), (30 20, 20 15, 20 25, 30 20)))",
       "POLYGON((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))"
-    ).map(wkt => Tuple1(wktReader.read(wkt))).toDF("geom")
+    ).map(wkt => Tuple1(wktReader.read(wkt))).toDF(geomCol)
 
     When("Using ST_Dumps")
     val dumpedGeometries = geometryDf.selectExpr("ST_Dump(geom) as geom")
     Then("Should return geometries list")
 
-    dumpedGeometries.select(explode($"geom")).count shouldBe 14
+    dumpedGeometries.select(explode(col(geomCol))).count shouldBe 14
     dumpedGeometries
-      .select(explode($"geom").alias("geom"))
+      .select(explode(col(geomCol)).alias(geomCol))
       .selectExpr("ST_AsText(geom) as geom")
       .as[String]
       .collect() should contain theSameElementsAs List(
-      "POINT (21 52)", "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))", "LINESTRING (0 0, 1 1, 1 0)",
-      "POINT (10 40)", "POINT (40 30)", "POINT (20 20)", "POINT (30 10)", "POLYGON ((30 20, 45 40, 10 40, 30 20))",
+      pointInPolandWkt, lineStringShortPlusPolandWkt, lineStringShortWkt,
+      pointOneTwoWkt, "POINT (3 4)", "POINT (5 6)", "POINT (8 9)", "POLYGON ((30 20, 45 40, 10 40, 30 20))",
       "POLYGON ((15 5, 40 10, 10 20, 5 10, 15 5))", "LINESTRING (10 10, 20 20, 10 40)", "LINESTRING (40 40, 30 30, 40 20, 30 10)",
       "POLYGON ((40 40, 20 45, 45 30, 40 40))", "POLYGON ((20 35, 10 30, 10 10, 30 5, 45 20, 20 35), (30 20, 20 15, 20 25, 30 20))",
-      "POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))"
+      polygonWithHoleWkt
     )
 
   }
 
   it("Should pass ST_DumpPoints") {
     Given("DataFrame with geometries")
-    val geometryDf = createSampleLineStringsDf(1, "geom")
-      .union(createSamplePointDf(1, "geom"))
-      .union(createSimplePolygons(1, "geom"))
+    val geometryDf = createSampleLineStringsDf(1, geomCol)
+      .union(createSamplePointDf(1, geomCol))
+      .union(createSimplePolygons(1, geomCol))
 
     When("Using ST_DumpPoints and explode")
 
     val dumpedPoints = geometryDf.selectExpr("ST_DumpPoints(geom) as geom")
-      .select(explode($"geom").alias("geom"))
+      .select(explode(col(geomCol)).alias(geomCol))
 
     Then("Number of rows should match and collected to list should match expected point list")
     dumpedPoints.count shouldBe 10
-    dumpedPoints.selectExpr("ST_AsText(geom)")
-      .as[String].collect().toList should contain theSameElementsAs List(
+    collectWktsFromDf(dumpedPoints) should contain theSameElementsAs List(
       "POINT (-112.506968 45.98186)",
       "POINT (-112.506968 45.983586)",
       "POINT (-112.504872 45.983586)",
       "POINT (-112.504872 45.98186)",
       "POINT (-71.064544 42.28787)",
-      "POINT (0 0)", "POINT (0 1)",
+      pointOriginWkt, pointZeroOneWkt,
       "POINT (1 1)", "POINT (1 0)",
-      "POINT (0 0)"
+      pointOriginWkt
     )
   }
 
   it("Should pass ST_IsClosed") {
     Given("Dataframe with geometries")
     val geometryDf = Seq(
-      (1, "Point(21 52)"),
-      (2, "Polygon((0 0, 0 1, 1 1, 1 0, 0 0))"),
-      (3, "Linestring(0 0, 1 1, 1 0)"),
-      (4, "Linestring(0 0, 1 1, 1 0, 0 0)"),
-      (5, "MULTIPOINT ((10 40), (40 30), (20 20), (30 10))"),
-      (6, "MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))"),
-      (7, "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))"),
-      (8, "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10))"),
-      (9, "MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))"),
-      (10, "GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40), POLYGON ((40 40, 20 45, 45 30, 40 40)))")
-    ).map({ case (index, wkt) => Tuple2(index, wktReader.read(wkt)) }).toDF("id", "geom")
+      (1, pointInPolandWkt),
+      (2, polygonUnitSquareWkt),
+      (3, lineStringShortWkt),
+      (4, lineStringRingWkt),
+      (5, multiPointBasicWkt),
+      (6, multiPolygonWkt),
+      (7, multiLineStringTwoRingsWkt),
+      (8, multiLineStringOneRingWkt),
+      (9, multiLineStringWkt),
+      (10, geometryCollectionWkt)
+    ).map({ case (index, wkt) => Tuple2(index, wktReader.read(wkt)) }).toDF(idCol, geomCol)
 
     When("Using ST_IsClosed")
 
-    val isClosed = geometryDf.selectExpr("id", "ST_IsClosed(geom)").as[(Int, Boolean)]
+    val isClosed = geometryDf.selectExpr(idCol, "ST_IsClosed(geom)").as[(Int, Boolean)]
 
     Then("Result should match to list")
 
@@ -1002,22 +971,22 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   it("Should pass ST_NumInteriorRings") {
     Given("Geometry DataFrame")
     val geometryDf = Seq(
-      (1, "Point(21 52)"),
-      (2, "Polygon((0 0, 0 1, 1 1, 1 0, 0 0))"),
-      (3, "Linestring(0 0, 1 1, 1 0)"),
-      (4, "Linestring(0 0, 1 1, 1 0, 0 0)"),
-      (5, "MULTIPOINT ((10 40), (40 30), (20 20), (30 10))"),
-      (6, "MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))"),
-      (7, "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))"),
-      (8, "MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10))"),
-      (9, "MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))"),
-      (10, "GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40), POLYGON ((40 40, 20 45, 45 30, 40 40)))"),
-      (11, "POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))")
-    ).map({ case (index, wkt) => Tuple2(index, wktReader.read(wkt)) }).toDF("id", "geom")
+      (1, pointInPolandWkt),
+      (2, polygonUnitSquareWkt),
+      (3, lineStringShortWkt),
+      (4, lineStringRingWkt),
+      (5, multiPointBasicWkt),
+      (6, multiPolygonWkt),
+      (7, multiLineStringTwoRingsWkt),
+      (8, multiLineStringOneRingWkt),
+      (9, multiLineStringWkt),
+      (10, geometryCollectionWkt),
+      (11, polygonWithHoleWkt)
+    ).map({ case (index, wkt) => Tuple2(index, wktReader.read(wkt)) }).toDF(idCol, geomCol)
 
     When("Using ST_NumInteriorRings")
     val numberOfInteriorRings = geometryDf.selectExpr(
-      "id", "ST_NumInteriorRings(geom) as num"
+      idCol, "ST_NumInteriorRings(geom) as num"
     )
 
     Then("Result should match with expected values")
@@ -1031,46 +1000,43 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   it("Should pass ST_AddPoint") {
     Given("Geometry df")
     val geometryDf = Seq(
-      ("Point(21 52)", "Point(21 52)"),
-      ("Point(21 52)", "Polygon((0 0, 0 1, 1 1, 1 0, 0 0))"),
-      ("Linestring(0 0, 1 1, 1 0)", "Point(21 52)"),
-      ("Linestring(0 0, 1 1, 1 0, 0 0)", "Linestring(0 0, 1 1, 1 0, 0 0)"),
-      ("Point(21 52)", "MULTIPOINT ((10 40), (40 30), (20 20), (30 10))"),
-      ("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))", "Point(21 52)"),
-      ("GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40), POLYGON ((40 40, 20 45, 45 30, 40 40)))", "Point(21 52)"),
-      ("POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))", "Point(21 52)")
-    ).map({ case (geomA, geomB) => Tuple2(wktReader.read(geomA), wktReader.read(geomB)) }).toDF("geomA", "geomB")
+      (pointInPolandWkt, pointInPolandWkt),
+      (pointInPolandWkt, lineStringShortPlusPolandWkt),
+      (lineStringShortWkt, pointInPolandWkt),
+      (lineStringRingWkt, lineStringRingWkt),
+      (pointInPolandWkt, multiPointBasicWkt),
+      (multiPolygonWkt, pointInPolandWkt),
+      (multiLineStringTwoRingsWkt, pointInPolandWkt),
+      (multiLineStringOneRingWkt, pointInPolandWkt),
+      (multiLineStringWkt, pointInPolandWkt),
+      (geometryCollectionWkt, pointInPolandWkt),
+      (polygonWithHoleWkt, pointInPolandWkt)
+    ).map({ case (geomA, geomB) => Tuple2(wktReader.read(geomA), wktReader.read(geomB)) }).toDF(geomACol, geomBCol)
     When("Using ST_AddPoint")
     val modifiedGeometries = geometryDf.selectExpr("ST_AddPoint(geomA, geomB) as geom")
 
-    Then("Result should match")
+    Then("Result should contain a linestring")
 
-    modifiedGeometries
-      .filter("geom is not null")
-      .selectExpr("ST_AsText(geom)")
-      .as[String].collect() should contain theSameElementsAs List(
-      "LINESTRING (0 0, 1 1, 1 0, 21 52)"
+    collectWktsFromDf(modifiedGeometries.filter(nullGeomFilter)) should contain theSameElementsAs List(
+      lineStringShortPlusPolandWkt
     )
   }
 
   it("Should pass ST_AddPoint with index") {
     Given("Geometry df")
     val geometryDf = Seq(
-      ("Point(21 52)", "Point(21 52)"),
-      ("Point(21 52)", "Polygon((0 0, 0 1, 1 1, 1 0, 0 0))"),
-      ("Linestring(0 0, 1 1, 1 0)", "Point(21 52)"),
-      ("Linestring(0 0, 1 1, 1 0, 0 0)", "Linestring(0 0, 1 1, 1 0, 0 0)"),
-      ("Point(21 52)", "MULTIPOINT ((10 40), (40 30), (20 20), (30 10))"),
-      ("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10))", "Point(21 52)"),
-      ("MULTILINESTRING ((10 10, 20 20, 10 40), (40 40, 30 30, 40 20, 30 10))", "Point(21 52)"),
-      ("GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40), POLYGON ((40 40, 20 45, 45 30, 40 40)))", "Point(21 52)"),
-      ("POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))", "Point(21 52)")
-    ).map({ case (geomA, geomB) => Tuple2(wktReader.read(geomA), wktReader.read(geomB)) }).toDF("geomA", "geomB")
+      (pointInPolandWkt, pointInPolandWkt),
+      (pointInPolandWkt, lineStringShortPlusPolandWkt),
+      (lineStringShortWkt, pointInPolandWkt),
+      (lineStringRingWkt, lineStringRingWkt),
+      (pointInPolandWkt, multiPointBasicWkt),
+      (multiPolygonWkt, pointInPolandWkt),
+      (multiLineStringTwoRingsWkt, pointInPolandWkt),
+      (multiLineStringOneRingWkt, pointInPolandWkt),
+      (multiLineStringWkt, pointInPolandWkt),
+      (geometryCollectionWkt, pointInPolandWkt),
+      (polygonWithHoleWkt, pointInPolandWkt)
+    ).map({ case (geomA, geomB) => Tuple2(wktReader.read(geomA), wktReader.read(geomB)) }).toDF(geomACol, geomBCol)
     When("Using ST_AddPoint")
 
     val modifiedGeometries = geometryDf.
@@ -1081,75 +1047,68 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       .union(geometryDf.selectExpr("ST_AddPoint(geomA, geomB, 4) as geom"))
       .union(geometryDf.selectExpr("ST_AddPoint(geomA, geomB, -1) as geom"))
 
-    Then("Result should match")
+    Then("Result should be modified linestrings")
 
-    modifiedGeometries
-      .filter("geom is not null")
-      .selectExpr("ST_AsText(geom)")
-      .as[String].collect() should contain theSameElementsAs List(
+    collectWktsFromDf(modifiedGeometries.filter(nullGeomFilter)) should contain theSameElementsAs List(
       "LINESTRING (0 0, 21 52, 1 1, 1 0)",
       "LINESTRING (21 52, 0 0, 1 1, 1 0)",
       "LINESTRING (0 0, 1 1, 21 52, 1 0)",
-      "LINESTRING (0 0, 1 1, 1 0, 21 52)",
-      "LINESTRING (0 0, 1 1, 1 0, 21 52)"
+      lineStringShortPlusPolandWkt,
+      lineStringShortPlusPolandWkt
     )
   }
 
   it("Should correctly remove using ST_RemovePoint") {
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)") shouldBe Some("LINESTRING (0 0, 1 1, 1 0)")
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 0) shouldBe Some("LINESTRING (1 1, 1 0, 0 0)")
+    calculateStRemovePointOption(lineStringRingWkt) shouldBe Some(lineStringShortWkt)
+    calculateStRemovePointOption(lineStringRingWkt, 0) shouldBe Some("LINESTRING (1 1, 1 0, 0 0)")
     calculateStRemovePointOption("Linestring(0 0, 1 1)", 0) shouldBe None
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 1) shouldBe Some("LINESTRING (0 0, 1 0, 0 0)")
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 2) shouldBe Some("LINESTRING (0 0, 1 1, 0 0)")
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 3) shouldBe Some("LINESTRING (0 0, 1 1, 1 0)")
-    calculateStRemovePointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 4) shouldBe None
-    calculateStRemovePointOption("POINT(0 1)", 3) shouldBe None
-    calculateStRemovePointOption("POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))", 3) shouldBe None
+    calculateStRemovePointOption(lineStringRingWkt, 1) shouldBe Some("LINESTRING (0 0, 1 0, 0 0)")
+    calculateStRemovePointOption(lineStringRingWkt, 2) shouldBe Some("LINESTRING (0 0, 1 1, 0 0)")
+    calculateStRemovePointOption(lineStringRingWkt, 3) shouldBe Some(lineStringShortWkt)
+    calculateStRemovePointOption(lineStringRingWkt, 4) shouldBe None
+    calculateStRemovePointOption(pointZeroOneWkt, 3) shouldBe None
+    calculateStRemovePointOption(polygonWithHoleWkt, 3) shouldBe None
     calculateStRemovePointOption("GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40))", 0) shouldBe None
-    calculateStRemovePointOption("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))", 3) shouldBe None
-    calculateStRemovePointOption("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))", 3) shouldBe None
+    calculateStRemovePointOption(multiPolygonWkt, 3) shouldBe None
+    calculateStRemovePointOption(multiLineStringTwoRingsWkt, 3) shouldBe None
   }
 
   it("Should correctly set using ST_SetPoint") {
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 0, "Point(0 1)") shouldBe Some("LINESTRING (0 1, 1 1, 1 0, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 1, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 0 1, 1 0, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 2, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 1 1, 0 1, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 3, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 1 1, 1 0, 0 1)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", 4, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", -1, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 1 1, 1 0, 0 1)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", -2, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 1 1, 0 1, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", -3, "Point(0 1)") shouldBe Some("LINESTRING (0 0, 0 1, 1 0, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", -4, "Point(0 1)") shouldBe Some("LINESTRING (0 1, 1 1, 1 0, 0 0)")
-    calculateStSetPointOption("Linestring(0 0, 1 1, 1 0, 0 0)", -5, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("POINT(0 1)", 0, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))", 0, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40))", 0, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)), ((15 5, 40 10, 10 20, 5 10, 15 5)))", 0, "Point(0 1)") shouldBe None
-    calculateStSetPointOption("MULTILINESTRING ((10 10, 20 20, 10 40, 10 10), (40 40, 30 30, 40 20, 30 10, 40 40))", 0, "Point(0 1)") shouldBe None
+    calculateStSetPointOption(lineStringRingWkt, 0, pointZeroOneWkt) shouldBe Some("LINESTRING (0 1, 1 1, 1 0, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, 1, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 0 1, 1 0, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, 2, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 1 1, 0 1, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, 3, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 1 1, 1 0, 0 1)")
+    calculateStSetPointOption(lineStringRingWkt, 4, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption(lineStringRingWkt, -1, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 1 1, 1 0, 0 1)")
+    calculateStSetPointOption(lineStringRingWkt, -2, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 1 1, 0 1, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, -3, pointZeroOneWkt) shouldBe Some("LINESTRING (0 0, 0 1, 1 0, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, -4, pointZeroOneWkt) shouldBe Some("LINESTRING (0 1, 1 1, 1 0, 0 0)")
+    calculateStSetPointOption(lineStringRingWkt, -5, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption(pointZeroOneWkt, 0, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption(polygonWithHoleWkt, 0, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption("GEOMETRYCOLLECTION (POINT (40 10), LINESTRING (10 10, 20 20, 10 40))", 0, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption(multiPolygonWkt, 0, pointZeroOneWkt) shouldBe None
+    calculateStSetPointOption(multiLineStringTwoRingsWkt, 0, pointZeroOneWkt) shouldBe None
   }
 
   it("Should pass ST_IsRing") {
     calculateStIsRing("LINESTRING(0 0, 0 1, 1 0, 1 1, 0 0)") shouldBe Some(false)
     calculateStIsRing("LINESTRING(2 0, 2 2, 3 3)") shouldBe Some(false)
     calculateStIsRing("LINESTRING(0 0, 0 1, 1 1, 1 0, 0 0)") shouldBe Some(true)
-    calculateStIsRing("POINT (21 52)") shouldBe None
-    calculateStIsRing("POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1))") shouldBe None
+    calculateStIsRing(pointInPolandWkt) shouldBe None
+    calculateStIsRing(polygonWithHoleWkt) shouldBe None
   }
 
 
   it("should handle subdivision on huge amount of data"){
     Given("dataframe with 100 huge polygons")
     val expectedCount = 55880
-    val polygonWktDf = sparkSession
-      .read
-      .format("csv")
-      .option("delimiter", "\t")
-      .option("header", "false").load(mixedWktGeometryInputLocation)
+    val polygonWktDf = loadTsvFromPath(mixedWktGeometryInputLocation)
       .selectExpr("ST_GeomFromText(_c0) AS geom", "_c3 as id")
 
     When("running st subdivide")
-    val subDivisionExplode = polygonWktDf.selectExpr("id", "ST_SubDivideExplode(geom, 10) as divided")
-    val subDivision = polygonWktDf.selectExpr("id", "ST_SubDivide(geom, 10) as divided")
+    val subDivisionExplode = polygonWktDf.selectExpr(idCol, "ST_SubDivideExplode(geom, 10) as divided")
+    val subDivision = polygonWktDf.selectExpr(idCol, "ST_SubDivide(geom, 10) as divided")
 
     Then("result should be appropriate")
     subDivision.count shouldBe polygonWktDf.count
@@ -1159,11 +1118,11 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it("should return empty data when the input geometry is null"){
     Given("dataframe with null geometries")
-    val geodataframe = Seq((1, null)).toDF("id", "geom")
+    val geodataframe = Seq((1, null)).toDF(idCol, geomCol)
 
     When("calculating sub divide")
-    val subDivisionExplode = geodataframe.selectExpr("id", "ST_SubDivideExplode(geom, 10)")
-    val subDivision = geodataframe.selectExpr("id", "ST_SubDivide(geom, 10)")
+    val subDivisionExplode = geodataframe.selectExpr(idCol, "ST_SubDivideExplode(geom, 10)")
+    val subDivision = geodataframe.selectExpr(idCol, "ST_SubDivide(geom, 10)")
 
     Then("dataframe exploded should be empty")
     subDivisionExplode.count shouldBe 0
@@ -1174,20 +1133,16 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it("it should return appropriate default column names for st_subdivide"){
     Given("Sample geometry dataframe with different geometry types")
-    val polygonWktDf = sparkSession
-      .read
-      .format("csv")
-      .option("delimiter", "\t")
-      .option("header", "false").load(mixedWktGeometryInputLocation)
+    val polygonWktDf = loadTsvFromPath(mixedWktGeometryInputLocation)
       .selectExpr("ST_GeomFromText(_c0) AS geom", "_c3 as id")
 
     When("using ST_SubDivide function")
-    val subDivisionExplode = polygonWktDf.selectExpr("id", "ST_SubDivideExplode(geom, 10)")
-    val subDivision = polygonWktDf.selectExpr("id", "ST_SubDivide(geom, 10)")
+    val subDivisionExplode = polygonWktDf.selectExpr(idCol, "ST_SubDivideExplode(geom, 10)")
+    val subDivision = polygonWktDf.selectExpr(idCol, "ST_SubDivide(geom, 10)")
 
     Then("column names should be as expected")
-    subDivisionExplode.columns shouldBe Seq("id", "geom")
-    subDivision.columns shouldBe Seq("id", "st_subdivide(geom, 10)")
+    subDivisionExplode.columns shouldBe Seq(idCol, geomCol)
+    subDivision.columns shouldBe Seq(idCol, "st_subdivide(geom, 10)")
 
   }
 
@@ -1195,37 +1150,37 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     Given("Sample dataframe with null values and geometries")
     val nonNullGeometries = Seq(
       (1, "LINESTRING (0 0, 1 1, 2 2)"),
-      (2, "POINT (0 0)"),
-      (3, "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))")
+      (2, pointOriginWkt),
+      (3, lineStringShortPlusPolandWkt)
     ).map{
       case (id, geomWkt) => (id, wktReader.read(geomWkt))
     }
     val nullGeometries: Tuple2[Int, Geometry] = (4, null)
 
-    val geometryTable = (nullGeometries +: nonNullGeometries).toDF("id", "geom")
+    val geometryTable = (nullGeometries +: nonNullGeometries).toDF(idCol, geomCol)
 
     When("running ST_SubDivide on dataframe")
-    val subDivision = geometryTable.selectExpr("id", "ST_SubDivide(geom, 10) as divided")
+    val subDivision = geometryTable.selectExpr(idCol, "ST_SubDivide(geom, 10) as divided")
 
     Then("for null values return value should be null also")
     subDivision.filter("divided is null")
-      .select("id").as[Long].collect().headOption shouldBe Some(nullGeometries._1)
+      .select(idCol).as[Long].collect().headOption shouldBe Some(nullGeometries._1)
 
     And("for geometry type value should be appropriate")
     subDivision.filter("divided is not null")
-      .select("id").as[Long].collect() should contain theSameElementsAs nonNullGeometries.map(_._1)
+      .select(idCol).as[Long].collect() should contain theSameElementsAs nonNullGeometries.map(_._1)
   }
 
   it("should allow to use lateral view with st sub divide explode"){
     Given("geometry dataframe")
     val geometryDf = Seq(
       (1, "LINESTRING (0 0, 1 1, 2 2)"),
-      (2, "POINT (0 0)"),
-      (3, "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))"),
+      (2, pointOriginWkt),
+      (3, lineStringShortPlusPolandWkt),
       (4, "POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10), (20 30, 35 35, 30 20, 20 30))")
     ).map{
       case (id, geomWkt) => (id, wktReader.read(geomWkt))
-    }.toDF("id", "geometry")
+    }.toDF(idCol, "geometry")
     geometryDf.createOrReplaceTempView("geometries")
 
     When("using lateral view on data")
@@ -1257,9 +1212,9 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   )
 
   private def calculateGeometryN(wkt: String, index: Int): Option[Row] = {
-    Seq(wkt).map(wkt => Tuple1(wktReader.read(wkt))).toDF("geom")
+    Seq(wkt).map(wkt => Tuple1(wktReader.read(wkt))).toDF(geomCol)
       .selectExpr(s"ST_GeometryN(geom, $index) as geom")
-      .filter("geom is not null")
+      .filter(nullGeomFilter)
       .selectExpr(s"ST_AsText(geom) as geom_text")
       .toSeqOption
   }
@@ -1269,76 +1224,71 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       .filter("is_ring is not null").as[Boolean].collect().headOption
 
   private def wktToDf(wkt: String): DataFrame =
-    Seq(Tuple1(wktReader.read(wkt))).toDF("geom")
+    Seq(Tuple1(wktReader.read(wkt))).toDF(geomCol)
 
   private def calculateStRemovePointOption(wkt: String): Option[String] =
     calculateStRemovePoint(wkt).headOption
 
-  private def calculateStRemovePoint(wkt: String): Array[String] =
-    wktToDf(wkt).selectExpr(s"ST_RemovePoint(geom) as geom")
-      .filter("geom is not null")
-      .selectExpr("ST_AsText(geom)").as[String].collect()
+  private def calculateStRemovePoint(wkt: String): List[String] =
+    collectWktsFromDf(wktToDf(wkt).selectExpr(s"ST_RemovePoint(geom) as geom").filter(nullGeomFilter))
 
   private def calculateStRemovePointOption(wkt: String, index: Int): Option[String] =
     calculateStRemovePoint(wkt, index).headOption
 
-  private def calculateStRemovePoint(wkt: String, index: Int): Array[String] =
-    wktToDf(wkt).selectExpr(s"ST_RemovePoint(geom, $index) as geom")
-      .filter("geom is not null")
-      .selectExpr("ST_AsText(geom)").as[String].collect()
+  private def calculateStRemovePoint(wkt: String, index: Int): List[String] =
+    collectWktsFromDf(wktToDf(wkt).selectExpr(s"ST_RemovePoint(geom, $index) as geom").filter(nullGeomFilter))
 
   private def calculateStSetPointOption(wktA: String, index: Int, wktB: String): Option[String] =
     calculateStSetPoint(wktA, index, wktB).headOption
 
   private def calculateStSetPoint(wktA: String, index: Int, wktB: String): Array[String] =
-    Seq(Tuple3(wktReader.read(wktA), index, wktReader.read(wktB))).toDF("geomA", "index", "geomB")
+    Seq(Tuple3(wktReader.read(wktA), index, wktReader.read(wktB))).toDF(geomACol, "index", geomBCol)
       .selectExpr(s"ST_SetPoint(geomA, index, geomB) as geom")
-      .filter("geom is not null")
+      .filter(nullGeomFilter)
       .selectExpr("ST_AsText(geom)").as[String].collect()
 
   it("Passed ST_NumGeometries") {
-    Given("Some different types of geometries in a DF")
+    Given("Dataframe with a variety of geometries")
     // Test data
     val testData = Seq(
       ("LINESTRING (-29 -27, -30 -29.7, -45 -33)"),
-      ("MULTILINESTRING ((-29 -27, -30 -29.7, -36 -31, -45 -33), (-45.2 -33.2, -46 -32))"),
-      ("POLYGON ((8 25, 28 22, 15 11, 33 3, 56 30, 47 44, 35 36, 43 19, 24 39, 8 25))"),
+      (multiLineStringWkt),
+      (polygonUnitSquareWkt),
       ("MULTIPOLYGON(((0 0, 3 0, 3 3, 0 3, 0 0)), ((3 0, 6 0, 6 3, 3 3, 3 0)))"),
       ("GEOMETRYCOLLECTION(MULTIPOINT(-2 3 , -2 2), LINESTRING(5 5 ,10 10), POLYGON((-7 4.2,-7.1 5,-7.1 4.3,-7 4.2)))"))
-      .toDF("Geometry")
+      .toDF(geomCol)
 
     When("Using ST_NumGeometries")
-    val testDF = testData.selectExpr("Geometry", "ST_NumGeometries(ST_GeomFromText(Geometry)) as ngeom")
+    val testDF = testData.selectExpr("ST_NumGeometries(ST_GeomFromText(geom)) as ngeom")
 
-    Then("Result should match")
+    Then("ngeom should contain the correct counts of geometries")
     testDF.selectExpr("ngeom")
       .as[Int].collect() should contain theSameElementsAs List(1, 2, 1, 2, 3)
   }
 
   it("Passed ST_LineMerge") {
-    Given("Some different types of geometries in a DF")
+    Given("Dataframe with multilinestrings and a polygon")
     val testData = Seq(
       ("MULTILINESTRING ((-29 -27, -30 -29.7, -45 -33), (-45 -33, -46 -32))"),
-      ("MULTILINESTRING ((-29 -27, -30 -29.7, -36 -31, -45 -33), (-45.2 -33.2, -46 -32))"),
-      ("POLYGON ((8 25, 28 22, 15 11, 33 3, 56 30, 47 44, 35 36, 43 19, 24 39, 8 25))")
-    ).toDF("Geometry")
+      (multiLineStringWkt),
+      (polygonUnitSquareWkt)
+    ).toDF(geomCol)
 
     When("Using ST_LineMerge")
-    val testDF = testData.selectExpr("ST_LineMerge(ST_GeomFromText(Geometry)) as geom")
+    val testDF = testData.selectExpr("ST_LineMerge(ST_GeomFromText(geom)) as geom")
 
-    Then("Result should match")
-    testDF.selectExpr("ST_AsText(geom)")
-      .as[String].collect() should contain theSameElementsAs
+    Then("Result should linestring, multilinestring, and empty collection")
+    collectWktsFromDf(testDF) should contain theSameElementsAs
       List("LINESTRING (-29 -27, -30 -29.7, -45 -33, -46 -32)",
-        "MULTILINESTRING ((-29 -27, -30 -29.7, -36 -31, -45 -33), (-45.2 -33.2, -46 -32))",
+        multiLineStringWkt,
         "GEOMETRYCOLLECTION EMPTY")
   }
 
   it("Should pass ST_FlipCoordinates") {
-    val pointDF = createSamplePointDf(5, "geom")
+    val pointDF = createSamplePointDf(5, geomCol)
     val oldX = pointDF.take(1)(0).get(0).asInstanceOf[Geometry].getCoordinate.x
     val oldY = pointDF.take(1)(0).get(0).asInstanceOf[Geometry].getCoordinate.y
-    val newDf = pointDF.withColumn("geom", callUDF("ST_FlipCoordinates", col("geom")))
+    val newDf = pointDF.withColumn(geomCol, callUDF("ST_FlipCoordinates", col(geomCol)))
     val newX = newDf.take(1)(0).get(0).asInstanceOf[Geometry].getCoordinate.x
     val newY = newDf.take(1)(0).get(0).asInstanceOf[Geometry].getCoordinate.y
     assert(newX == oldY)
@@ -1346,11 +1296,11 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   }
 
   it("Should pass ST_MinimumBoundingCircle") {
-    Given("Sample geometry data frame")
+    Given("Dataframe with a point and a linestring")
     val geometryTable = Seq(
       "POINT(0 2)",
       "LINESTRING(0 0,0 1)"
-    ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+    ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
     When("Using ST_MinimumBoundingCircle function")
 
@@ -1363,26 +1313,24 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     val mbcLineString = new MinimumBoundingCircle(lineString)
     val mbcCentre = lineString.getFactory.createPoint(mbcLineString.getCentre)
 
-    circleTable.selectExpr("ST_AsText(geom)")
-      .as[String].collect().toList should contain theSameElementsAs List(
+    collectWktsFromDf(circleTable) should contain theSameElementsAs List(
       "POINT (0 2)",
       mbcCentre.buffer(mbcLineString.getRadius, 8).toText
     )
 
-    circleTableWithSeg.selectExpr("ST_AsText(geom)")
-      .as[String].collect().toList should contain theSameElementsAs List(
+    collectWktsFromDf(circleTableWithSeg) should contain theSameElementsAs List(
       "POINT (0 2)",
       mbcCentre.buffer(mbcLineString.getRadius, 1).toText
     )
   }
 
   it("Should pass ST_MinimumBoundingRadius") {
-    Given("Sample geometry data frame")
+    Given("Dataframe with point, linestring, and polygon")
     val geometryTable = Seq(
-      "POINT (0 1)",
+      pointZeroOneWkt,
       "LINESTRING(1 1,0 0, -1 1)",
       "POLYGON((1 1,0 0, -1 1, 1 1))"
-    ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+    ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
     When("Using ST_MinimumBoundingRadius function")
 
@@ -1392,9 +1340,9 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
     radiusTable.selectExpr("ST_AsText(center)")
       .as[String].collect().toList should contain theSameElementsAs List(
-      "POINT (0 1)",
-      "POINT (0 1)",
-      "POINT (0 1)"
+      pointZeroOneWkt,
+      pointZeroOneWkt,
+      pointZeroOneWkt
     )
 
     radiusTable.selectExpr("radius")
@@ -1405,13 +1353,13 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     Given("Sample geometry dataframe")
     val geometryTable = Seq(
       "LINESTRING(25 50, 100 125, 150 190)"
-    ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+    ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
     When("Using ST_LineSubstring")
 
     val substringTable = geometryTable.selectExpr("ST_LineSubstring(geom, 0.333, 0.666) as subgeom")
 
-    Then("Result should match")
+    Then("Result should contain proper subsection of line.")
 
     val lineString = geometryTable.collect()(0)(0).asInstanceOf[Geometry]
     val indexedLineString = new LengthIndexedLine(lineString)
@@ -1429,13 +1377,13 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     val geometryTable = Seq(
       "LINESTRING(25 50, 100 125, 150 190)",
       "LINESTRING(1 2, 4 5, 6 7)"
-    ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+    ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
     When("Using ST_LineInterpolatePoint")
 
     val interpolatedPointTable = geometryTable.selectExpr("ST_LineInterpolatePoint(geom, 0.50) as interpts")
 
-    Then("Result should match")
+    Then("Result should points along line")
 
     val lineString2D = geometryTable.collect()(0)(0).asInstanceOf[Geometry]
     val lineString3D = geometryTable.collect()(1)(0).asInstanceOf[Geometry]
@@ -1463,13 +1411,13 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   it ("Should pass ST_PointOnSurface") {
 
     val geomTestCases1 = Map(
-      "'POINT(0 5)'"
-        -> "POINT (0 5)",
-      "'LINESTRING(0 5, 0 10)'"
-        -> "POINT (0 5)",
+      s"'${pointZeroOneWkt}'"
+        -> pointZeroOneWkt,
+      "'LINESTRING(0 1, 0 10)'"
+        -> pointZeroOneWkt,
       "'POLYGON((0 0, 0 5, 5 5, 5 0, 0 0))'"
         -> "POINT (2.5 2.5)",
-      "'LINESTRING(0 5 1, 0 0 1, 0 10 2)'"
+      s"'${lineStringZCoordWkt}'"
         -> "POINT Z(0 0 1)"
     )
 
@@ -1480,7 +1428,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
     }
 
     val geomTestCases2 = Map(
-      "'LINESTRING(0 5 1, 0 0 1, 0 10 2)'"
+      s"'${lineStringZCoordWkt}'"
         -> "POINT Z(0 0 1)"
     )
 
@@ -1497,28 +1445,20 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
         -> "POLYGON Z((-1 0 0, 0 1 0, 0 0 1, 1 0 0, -1 0 0))",
       "'LINESTRING(0 0, 1 2, 2 4, 3 6)'"
         -> "LINESTRING (3 6, 2 4, 1 2, 0 0)",
-      "'POINT(1 2)'"
-        -> "POINT (1 2)",
+      s"'${pointZeroOneWkt}'"
+        -> pointZeroOneWkt,
       "'MULTIPOINT((10 40 66), (40 30 77), (20 20 88), (30 10 99))'"
         -> "MULTIPOINT Z((10 40 66), (40 30 77), (20 20 88), (30 10 99))",
-      """'MULTIPOLYGON(((30 20 11, 45 40 11, 10 40 11, 30 20 11)),
-      |((15 5 11, 40 10 11, 10 20 11, 5 10 11, 15 5 11)))'""".stripMargin.replaceAll("\n", " ")
-        -> """MULTIPOLYGON Z(((30 20 11, 10 40 11, 45 40 11, 30 20 11)),
-          |((15 5 11, 5 10 11, 10 20 11, 40 10 11, 15 5 11)))""".stripMargin.replaceAll("\n", " "),
-      """'MULTILINESTRING((10 10 11, 20 20 11, 10 40 11),
-        |(40 40 11, 30 30 11, 40 20 11, 30 10 11))'""".stripMargin.replaceAll("\n", " ")
-        -> """MULTILINESTRING Z((10 40 11, 20 20 11, 10 10 11),
-          |(30 10 11, 40 20 11, 30 30 11, 40 40 11))""".stripMargin.replaceAll("\n", " "),
-      """'MULTIPOLYGON(((40 40 11, 20 45 11, 45 30 11, 40 40 11)),
-      |((20 35 11, 10 30 11, 10 10 11, 30 5 11, 45 20 11, 20 35 11),
-      |(30 20 11, 20 15 11, 20 25 11, 30 20 11)))'""".stripMargin.replaceAll("\n", " ")
-        -> """MULTIPOLYGON Z(((40 40 11, 45 30 11, 20 45 11, 40 40 11)),
-          |((20 35 11, 45 20 11, 30 5 11, 10 10 11, 10 30 11, 20 35 11),
-          |(30 20 11, 20 25 11, 20 15 11, 30 20 11)))""".stripMargin.replaceAll("\n", " "),
-      """'POLYGON((0 0 11, 0 5 11, 5 5 11, 5 0 11, 0 0 11),
-      |(1 1 11, 2 1 11, 2 2 11, 1 2 11, 1 1 11))'""".stripMargin.replaceAll("\n", " ")
-        -> """POLYGON Z((0 0 11, 5 0 11, 5 5 11, 0 5 11, 0 0 11),
-          |(1 1 11, 1 2 11, 2 2 11, 2 1 11, 1 1 11))""".stripMargin.replaceAll("\n", " ")
+      """'MULTIPOLYGON(((30 20 11, 45 40 11, 10 40 11, 30 20 11)), ((15 5 11, 40 10 11, 10 20 11, 5 10 11, 15 5 11)))'"""
+        -> """MULTIPOLYGON Z(((30 20 11, 10 40 11, 45 40 11, 30 20 11)), ((15 5 11, 5 10 11, 10 20 11, 40 10 11, 15 5 11)))""",
+      """'MULTILINESTRING((10 10 11, 20 20 11, 10 40 11), (40 40 11, 30 30 11, 40 20 11, 30 10 11))'"""
+        -> """MULTILINESTRING Z((10 40 11, 20 20 11, 10 10 11), (30 10 11, 40 20 11, 30 30 11, 40 40 11))""",
+      "'MULTIPOLYGON(((40 40 11, 20 45 11, 45 30 11, 40 40 11)), " +
+      "((20 35 11, 10 30 11, 10 10 11, 30 5 11, 45 20 11, 20 35 11), " +
+      "(30 20 11, 20 15 11, 20 25 11, 30 20 11)))'"
+        -> "MULTIPOLYGON Z(((40 40 11, 45 30 11, 20 45 11, 40 40 11)), ((20 35 11, 45 20 11, 30 5 11, 10 10 11, 10 30 11, 20 35 11), (30 20 11, 20 25 11, 20 15 11, 30 20 11)))",
+      """'POLYGON((0 0 11, 0 5 11, 5 5 11, 5 0 11, 0 0 11), (1 1 11, 2 1 11, 2 2 11, 1 2 11, 1 1 11))'"""
+        -> """POLYGON Z((0 0 11, 5 0 11, 5 5 11, 0 5 11, 0 0 11), (1 1 11, 1 2 11, 2 2 11, 2 1 11, 1 1 11))"""
     )
     for((inputGeom, expectedGeom) <- geomTestCases) {
       var df = sparkSession.sql(s"select ST_AsText(ST_Reverse(ST_GeomFromText($inputGeom)))")
@@ -1529,7 +1469,7 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it("Should pass ST_PointN") {
 
-    Given("Some different types of geometries in a DF")
+    Given("Dataframe with linestrings, a polygon, and a point")
 
     val sampleLineString = "LINESTRING(0 0, 1 2, 2 4, 3 6)"
     val testData = Seq(
@@ -1543,18 +1483,17 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
       (sampleLineString, -5),
       ("POLYGON((-1 0 0, 1 0 0, 0 0 1, 0 1 0, -1 0 0))", 2),
       ("POINT(1 2)", 1)
-    ).toDF("Geometry", "N")
+    ).toDF(geomCol, "N")
 
     When("Using ST_PointN for getting the nth point in linestring type of Geometries")
 
-    val testDF = testData.selectExpr("ST_PointN(ST_GeomFromText(Geometry), N) as geom")
+    val testDF = testData.selectExpr("ST_PointN(ST_GeomFromText(geom), N) as geom")
 
     Then("Result should match the list of nth points")
 
-    testDF.selectExpr("ST_AsText(geom)")
-      .as[String].collect() should contain theSameElementsAs
+    collectWktsFromDf(testDF) should contain theSameElementsAs
       List(
-        "POINT (0 0)", "POINT (1 2)", "POINT (3 6)",
+        pointOriginWkt, pointOneTwoWkt, "POINT (3 6)",
         "POINT (2 4)", "POINT (2 4)", "POINT (3 6)",
         null, null, null, null
       )
@@ -1562,19 +1501,19 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it ("Should pass ST_AsEWKT") {
     var df = sparkSession.sql("SELECT ST_SetSrid(ST_GeomFromWKT('POLYGON((0 0,0 1,1 1,1 0,0 0))'), 4326) as point")
-    df.createOrReplaceTempView("table")
-    df = sparkSession.sql("SELECT ST_AsEWKT(point) from table")
+    df.createOrReplaceTempView(testTableName)
+    df = sparkSession.sql("SELECT ST_AsEWKT(point) from testtable")
     val s = "SRID=4326;POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))"
     assert(df.first().get(0).asInstanceOf[String] == s)
   }
 
   it ("Should pass ST_Force_2D") {
     val geomTestCases1 = Map(
-      "'POINT(0 5)'"
-        -> "POINT (0 5)",
+      s"'${pointZeroOneWkt}'"
+        -> pointZeroOneWkt,
       "'POLYGON((0 0 2, 0 5 2, 5 0 2, 0 0 2), (1 1 2, 3 1 2, 1 3 2, 1 1 2))'"
         -> "POLYGON ((0 0, 0 5, 5 0, 0 0), (1 1, 3 1, 1 3, 1 1))",
-      "'LINESTRING(0 5 1, 0 0 1, 0 10 2)'"
+      s"'${lineStringZCoordWkt}'"
         -> "LINESTRING (0 5, 0 0, 0 10)"
     )
 
@@ -1587,8 +1526,8 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
 
   it ("Should pass ST_IsEmpty") {
     var df = sparkSession.sql("SELECT ST_SetSrid(ST_GeomFromWKT('POLYGON((0 0,0 1,1 1,1 0,0 0))'), 4326) as point")
-    df.createOrReplaceTempView("table")
-    df = sparkSession.sql("SELECT ST_IsEmpty(point) from table")
+    df.createOrReplaceTempView(testTableName)
+    df = sparkSession.sql("SELECT ST_IsEmpty(point) from testtable")
     val s = false
     assert(df.first().get(0).asInstanceOf[Boolean] == s)
   }
@@ -1615,20 +1554,14 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
         -> "POLYGON ((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2))",
       "'MULTILINESTRING((0 0, 20 0, 20 20, 0 20, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2), (8 8, 8 12, 12 12, 12 8, 8 8))'"
         -> "MULTIPOLYGON (((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2)), ((8 8, 8 12, 12 12, 12 8, 8 8)))",
-      """'MULTILINESTRING((0 0, 20 0, 20 20, 0 20, 0 0),(2 2, 18 2, 18 18, 2 18, 2 2),
-        |(8 8, 8 9, 8 10, 8 11, 8 12, 9 12, 10 12, 11 12, 12 12, 12 11, 12 10, 12 9, 12 8, 11 8, 10 8, 9 8, 8 8))'""".stripMargin.replaceAll("\n", " ")
-        -> """MULTIPOLYGON (((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2)),
-             |((8 8, 8 9, 8 10, 8 11, 8 12, 9 12, 10 12, 11 12, 12 12, 12 11, 12 10, 12 9, 12 8, 11 8, 10 8, 9 8, 8 8)))""".stripMargin.replaceAll("\n", " "),
+      """'MULTILINESTRING((0 0, 20 0, 20 20, 0 20, 0 0),(2 2, 18 2, 18 18, 2 18, 2 2), (8 8, 8 9, 8 10, 8 11, 8 12, 9 12, 10 12, 11 12, 12 12, 12 11, 12 10, 12 9, 12 8, 11 8, 10 8, 9 8, 8 8))'"""
+        -> """MULTIPOLYGON (((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2)), ((8 8, 8 9, 8 10, 8 11, 8 12, 9 12, 10 12, 11 12, 12 12, 12 11, 12 10, 12 9, 12 8, 11 8, 10 8, 9 8, 8 8)))""",
       "'MULTILINESTRING((0 0, 20 0, 20 20, 0 20, 0 0),(2 2, 18 2, 18 18, 2 18, 2 2),(8 8, 8 12, 12 12, 12 8, 8 8),(10 8, 10 12))'"
         -> "MULTIPOLYGON (((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2)), ((8 8, 8 12, 12 12, 12 8, 8 8)))",
       "'MULTILINESTRING((0 0, 20 0, 20 20, 0 20, 0 0),(2 2, 18 2, 18 18, 2 18, 2 2),(10 2, 10 18))'"
         -> "POLYGON ((0 0, 0 20, 20 20, 20 0, 0 0), (2 2, 18 2, 18 18, 2 18, 2 2))",
-      """'MULTILINESTRING( (0 0, 70 0, 70 70, 0 70, 0 0), (10 10, 10 60, 40 60, 40 10, 10 10),
-        |(20 20, 20 30, 30 30, 30 20, 20 20), (20 30, 30 30, 30 50, 20 50, 20 30), (50 20, 60 20, 60 40, 50 40, 50 20),
-        |(50 40, 60 40, 60 60, 50 60, 50 40), (80 0, 110 0, 110 70, 80 70, 80 0), (90 60, 100 60, 100 50, 90 50, 90 60))'""".stripMargin.replaceAll("\n", " ")
-        -> """MULTIPOLYGON (((0 0, 0 70, 70 70, 70 0, 0 0), (10 10, 40 10, 40 60, 10 60, 10 10), (50 20, 60 20, 60 40, 60 60, 50 60, 50 40, 50 20)),
-          |((20 20, 20 30, 20 50, 30 50, 30 30, 30 20, 20 20)),
-          |((80 0, 80 70, 110 70, 110 0, 80 0), (90 50, 100 50, 100 60, 90 60, 90 50)))""".stripMargin.replaceAll("\n", " ")
+      """'MULTILINESTRING( (0 0, 70 0, 70 70, 0 70, 0 0), (10 10, 10 60, 40 60, 40 10, 10 10), (20 20, 20 30, 30 30, 30 20, 20 20), (20 30, 30 30, 30 50, 20 50, 20 30), (50 20, 60 20, 60 40, 50 40, 50 20), (50 40, 60 40, 60 60, 50 60, 50 40), (80 0, 110 0, 110 70, 80 70, 80 0), (90 60, 100 60, 100 50, 90 50, 90 60))'"""
+        -> """MULTIPOLYGON (((0 0, 0 70, 70 70, 70 0, 0 0), (10 10, 40 10, 40 60, 10 60, 10 10), (50 20, 60 20, 60 40, 60 60, 50 60, 50 40, 50 20)), ((20 20, 20 30, 20 50, 30 50, 30 30, 30 20, 20 20)), ((80 0, 80 70, 110 70, 110 0, 80 0), (90 50, 100 50, 100 60, 90 60, 90 50)))"""
     )
 
     for ((inputGeom, expectedGeom) <- geomTestCases) {
@@ -1765,21 +1698,22 @@ class functionTestScala extends TestBaseScala with Matchers with GeometrySample 
   }
 
   it ("Should pass St_CollectionExtract") {
+    val collectSecondGeom = "ST_AsText(ST_CollectionExtract(geom, 2))"
     var df = sparkSession.sql("SELECT ST_GeomFromText('GEOMETRYCOLLECTION(POINT(40 10), LINESTRING(0 5, 0 10), POLYGON((0 0, 0 5, 5 5, 5 0, 0 0)))') as geom")
     assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom))").collect().head.get(0) == "MULTIPOLYGON (((0 0, 0 5, 5 5, 5 0, 0 0)))")
     assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 3))").collect().head.get(0) == "MULTIPOLYGON (((0 0, 0 5, 5 5, 5 0, 0 0)))")
     assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 1))").collect().head.get(0) == "MULTIPOINT ((40 10))")
-    assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 2))").collect().head.get(0) == "MULTILINESTRING ((0 5, 0 10))")
-    assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 2))").collect().head.get(0) == "MULTILINESTRING ((0 5, 0 10))")
+    assert(df.selectExpr(collectSecondGeom).collect().head.get(0) == "MULTILINESTRING ((0 5, 0 10))")
+    assert(df.selectExpr(collectSecondGeom).collect().head.get(0) == "MULTILINESTRING ((0 5, 0 10))")
     df = sparkSession.sql("SELECT ST_GeomFromText('GEOMETRYCOLLECTION (POINT (40 10), POINT (40 10))') as geom")
     assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 1))").collect().head.get(0) == "MULTIPOINT ((40 10), (40 10))")
-    assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom, 2))").collect().head.get(0) == "MULTILINESTRING EMPTY")
+    assert(df.selectExpr(collectSecondGeom).collect().head.get(0) == "MULTILINESTRING EMPTY")
     assert(df.selectExpr("ST_AsText(ST_CollectionExtract(geom))").collect().head.get(0) == "MULTIPOINT ((40 10), (40 10))")
   }
 
   it("Should pass ST_Normalize") {
     val df = sparkSession.sql("SELECT ST_AsEWKT(ST_Normalize(ST_GeomFromWKT('POLYGON((0 1, 1 1, 1 0, 0 0, 0 1))')))")
-    assert(df.first().get(0).asInstanceOf[String] == "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))")
+    assert(df.first().get(0).asInstanceOf[String] == polygonUnitSquareWkt)
   }
 
   it ("Should pass ST_LineFromMultiPoint") {

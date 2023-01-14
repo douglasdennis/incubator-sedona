@@ -20,6 +20,7 @@
 package org.apache.sedona.sql.functions.collect
 
 import org.apache.sedona.sql.{GeometrySample, TestBaseScala}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.expr
 import org.scalatest.GivenWhenThen
 import org.scalatest.matchers.should.Matchers
@@ -32,6 +33,16 @@ class TestStCollect
 
   import sparkSession.implicits._
 
+  val emptyGeometryCollection = "GEOMETRYCOLLECTION EMPTY"
+  val geomCol = "geom"
+  val idCol = "id"
+  val collectedGeomCol = "collected_geom"
+  val collectGeomExpr = expr(s"ST_Collect($geomCol)")
+
+  def collectWktsFromDf(df: DataFrame): Seq[String] = {
+    df.selectExpr(s"ST_AsText($collectedGeomCol)").distinct().as[String].collect()
+  }
+
   describe("st collect workflow") {
     it("should return null when passed geometry is also null") {
       Given("data frame with empty geometries")
@@ -39,19 +50,15 @@ class TestStCollect
         (1, null),
         (2, null),
         (3, null)
-      ).toDF("id", "geom")
+      ).toDF(idCol, geomCol)
 
       When("running st collect on null elements")
       val withCollectedGeometries = emptyGeometryDataFrame
-        .withColumn("collected_geom", expr("ST_Collect(geom)"))
+        .withColumn(collectedGeomCol, collectGeomExpr)
 
       Then("result should contain all rows null")
-      withCollectedGeometries
-        .selectExpr("ST_AsText(collected_geom)")
-        .distinct()
-        .as[String]
-        .collect
-        .head shouldBe "GEOMETRYCOLLECTION EMPTY"
+      collectWktsFromDf(withCollectedGeometries)
+        .head shouldBe emptyGeometryCollection
 
     }
 
@@ -61,19 +68,15 @@ class TestStCollect
         (1, null, null),
         (2, null, null),
         (3, null, null)
-      ).toDF("id", "geom_left", "geom_right")
+      ).toDF(idCol, "geom_left", "geom_right")
 
       When("running st collect on null elements")
       val withCollectedGeometries = emptyGeometryDataFrame
-        .withColumn("collected_geom", expr("ST_Collect(geom_left, geom_right)"))
+        .withColumn(collectedGeomCol, expr("ST_Collect(geom_left, geom_right)"))
 
       Then("result should be null")
-      withCollectedGeometries
-        .selectExpr("ST_AsText(collected_geom)")
-        .distinct()
-        .as[String]
-        .collect
-        .head shouldBe "GEOMETRYCOLLECTION EMPTY"
+      collectWktsFromDf(withCollectedGeometries)
+        .head shouldBe emptyGeometryCollection
     }
 
     it("should not fail if any element in given array is empty") {
@@ -96,22 +99,19 @@ class TestStCollect
             wktReader.read("POINT(45 43)")
           )
         )
-      ).toDF("id", "geom")
+      ).toDF(idCol, geomCol)
 
       When("running st_collect function")
       val withCollectedGeometries = emptyGeometryDataFrame
-        .withColumn("collected_geom", expr("ST_Collect(geom)"))
+        .withColumn(collectedGeomCol, collectGeomExpr)
 
       Then(
         "only those non null element should be included in process of creating multigeometry"
       )
-      val expectedGeoms = withCollectedGeometries
-        .selectExpr("ST_AsText(collected_geom)")
-        .as[String]
-        .collect()
+      val expectedGeoms = collectWktsFromDf(withCollectedGeometries)
 
       expectedGeoms should contain theSameElementsAs Seq(
-        "GEOMETRYCOLLECTION EMPTY",
+        emptyGeometryCollection,
         "MULTILINESTRING ((0 0, 1 1, 2 2), (5 7, 4 3, 1 1, 0 0))",
         "MULTIPOINT ((21 52), (45 43))"
       )
@@ -142,19 +142,16 @@ class TestStCollect
             "POINT(-2 3)"
           ).map(wktReader.read)
         )
-      ).toDF("id", "geom")
+      ).toDF(idCol, geomCol)
 
       When("running st_collect function")
       val withCollectedGeometries = emptyGeometryDataFrame
-        .withColumn("collected_geom", expr("ST_Collect(geom)"))
+        .withColumn(collectedGeomCol, collectGeomExpr)
 
       Then(
         "only those non null element should be included in process of creating multigeometry"
       )
-      val expectedGeoms = withCollectedGeometries
-        .selectExpr("ST_AsText(collected_geom)")
-        .as[String]
-        .collect()
+      val expectedGeoms = collectWktsFromDf(withCollectedGeometries)
 
       expectedGeoms should contain theSameElementsAs Seq(
         "MULTIPOLYGON (((1 2, 1 4, 3 4, 3 2, 1 2)), ((0.5 0.5, 5 0, 5 5, 0 5, 0.5 0.5), (1.5 1, 4 3, 4 1, 1.5 1)))",
@@ -177,20 +174,17 @@ class TestStCollect
               wktReader.read(geomFourth)
             )
         }
-        .toDF("id", "geomFirst", "geomSecond", "geomThird", "geomFourth")
+        .toDF(idCol, "geomFirst", "geomSecond", "geomThird", "geomFourth")
 
       When("running st collect function")
       val stCollectResult = geometryDf
         .withColumn(
-          "collected",
+          collectedGeomCol,
           expr("ST_Collect(geomFirst, geomSecond, geomThird, geomFourth)")
         )
 
       Then("multi geometries should be created")
-      stCollectResult
-        .selectExpr("ST_AsText(collected)")
-        .as[String]
-        .collect() should contain theSameElementsAs (
+      collectWktsFromDf(stCollectResult) should contain theSameElementsAs (
         Seq("MULTIPOINT ((21 52), (43 34), (12 34), (34 67))")
       )
 
@@ -212,20 +206,17 @@ class TestStCollect
               wktReader.read(geomFourth)
             )
         }
-        .toDF("id", "geomFirst", "geomSecond", "geomThird", "geomFourth")
+        .toDF(idCol, "geomFirst", "geomSecond", "geomThird", "geomFourth")
 
       When("running st collect function")
       val stCollectResult = geometryDf
         .withColumn(
-          "collected",
+          collectedGeomCol,
           expr("ST_Collect(geomFirst, geomSecond, geomThird, geomFourth)")
         )
 
       Then("multi geometries should be created")
-      stCollectResult
-        .selectExpr("ST_AsText(collected)")
-        .as[String]
-        .collect() should contain theSameElementsAs (
+      collectWktsFromDf(stCollectResult) should contain theSameElementsAs (
         Seq("MULTIPOINT ((43 58), (34 67))")
       )
     }
@@ -236,19 +227,17 @@ class TestStCollect
         (1, "POINT(43 54)"),
         (2, "POLYGON((1 2,1 4,3 4,3 2,1 2))"),
         (3, "LINESTRING(1 2, 3 4)")
-      ).map { case (id, geom) => (id, wktReader.read(geom)) }.toDF("id", "geom")
+      ).map { case (id, geom) => (id, wktReader.read(geom)) }.toDF(idCol, geomCol)
 
       When("running on st collect on one geometry column")
       val geometryDfWithCollected = geometryDf
         .withColumn(
-          "collected",
-          expr("ST_Collect(geom)")
+          collectedGeomCol,
+          collectGeomExpr
         )
-        .selectExpr("ST_AsText(collected)")
-        .as[String]
 
       Then("should return MultiType for each geometry")
-      geometryDfWithCollected.collect() should contain theSameElementsAs
+      collectWktsFromDf(geometryDfWithCollected) should contain theSameElementsAs
         Seq(
           "MULTIPOINT ((43 54))",
           "MULTIPOLYGON (((1 2, 1 4, 3 4, 3 2, 1 2)))",

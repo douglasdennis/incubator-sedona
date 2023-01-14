@@ -19,6 +19,7 @@
 
 package org.apache.sedona.sql
 
+import org.apache.spark.sql.DataFrame
 import org.apache.sedona.core.formatMapper.GeoJsonReader
 import org.apache.sedona.core.formatMapper.shapefileParser.ShapefileReader
 import org.apache.sedona.sql.utils.Adapter
@@ -26,12 +27,20 @@ import org.locationtech.jts.geom.{Geometry, LineString}
 
 class constructorTestScala extends TestBaseScala {
 
+  val polygonTable = "polygontable"
+  val tabCharacter = "\t"
+  val commaCharacter = ","
+
+  def loadCSV(location: String, delimiter: String): DataFrame = {
+    sparkSession.read.format("csv").option("delimiter", delimiter).option("header", "false").load(location)
+  }
+
   import sparkSession.implicits._
 
   describe("Sedona-SQL Constructor Test") {
     it("Passed ST_Point") {
 
-      var pointCsvDF = sparkSession.read.format("csv").option("delimiter", ",").option("header", "false").load(csvPointInputLocation)
+      var pointCsvDF = loadCSV(csvPointInputLocation, commaCharacter)
 
       pointCsvDF.createOrReplaceTempView("pointtable")
       var pointDf = sparkSession.sql("select ST_Point(cast(pointtable._c0 as Decimal(24,20)), cast(pointtable._c1 as Decimal(24,20))) as arealandmark from pointtable")
@@ -65,7 +74,7 @@ class constructorTestScala extends TestBaseScala {
     }
 
     it("Passed ST_PointFromText") {
-      var pointCsvDF = sparkSession.read.format("csv").option("delimiter", ",").option("header", "false").load(arealmPointInputLocation)
+      var pointCsvDF = loadCSV(arealmPointInputLocation, commaCharacter)
       pointCsvDF.createOrReplaceTempView("pointtable")
 
       var pointDf = sparkSession.sql("select ST_PointFromText(concat(_c0,',',_c1),',') as arealandmark from pointtable")
@@ -73,9 +82,9 @@ class constructorTestScala extends TestBaseScala {
     }
 
     it("Passed ST_GeomFromWKT") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromWkt(polygontable._c0) as countyshape from polygontable")
+      var polygonWktDf = loadCSV(mixedWktGeometryInputLocation, tabCharacter)
+      polygonWktDf.createOrReplaceTempView(polygonTable)
+      var polygonDf = sparkSession.sql(s"select ST_GeomFromWkt(${polygonTable}._c0) as countyshape from ${polygonTable}")
       assert(polygonDf.count() == 100)
       val nullGeom = sparkSession.sql("select ST_GeomFromWKT(null)")
       assert(nullGeom.first().isNullAt(0))
@@ -118,9 +127,9 @@ class constructorTestScala extends TestBaseScala {
     }
 
     it("Passed ST_GeomFromText") {
-      var polygonWktDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWktGeometryInputLocation)
-      polygonWktDf.createOrReplaceTempView("polygontable")
-      var polygonDf = sparkSession.sql("select ST_GeomFromText(polygontable._c0) as countyshape from polygontable")
+      var polygonWktDf = loadCSV(mixedWktGeometryInputLocation, tabCharacter)
+      polygonWktDf.createOrReplaceTempView(polygonTable)
+      var polygonDf = sparkSession.sql(s"select ST_GeomFromText(${polygonTable}._c0) as countyshape from ${polygonTable}")
       assert(polygonDf.count() == 100)
       val nullGeom = sparkSession.sql("select ST_GeomFromText(null)")
       assert(nullGeom.first().isNullAt(0))
@@ -145,9 +154,9 @@ class constructorTestScala extends TestBaseScala {
 
     it("Passed ST_GeomFromWKB") {
       // UTF-8 encoded WKB String
-      val polygonWkbDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(mixedWkbGeometryInputLocation)
-      polygonWkbDf.createOrReplaceTempView("polygontable")
-      val polygonDf = sparkSession.sql("select ST_GeomFromWKB(polygontable._c0) as countyshape from polygontable")
+      val polygonWkbDf = loadCSV(mixedWkbGeometryInputLocation, tabCharacter)
+      polygonWkbDf.createOrReplaceTempView(polygonTable)
+      val polygonDf = sparkSession.sql(s"select ST_GeomFromWKB(${polygonTable}._c0) as countyshape from ${polygonTable}")
       assert(polygonDf.count() == 100)
       // RAW binary array
       val wkbSeq = Seq[Array[Byte]](Array[Byte](1, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, -124, -42, 0, -64, 0, 0, 0, 0, -128, -75, -42, -65, 0, 0, 0, 96, -31, -17, -9, -65, 0, 0, 0, -128, 7, 93, -27, -65))
@@ -166,9 +175,9 @@ class constructorTestScala extends TestBaseScala {
     }
 
     it("Passed ST_GeomFromGeoJSON") {
-      val polygonJsonDf = sparkSession.read.format("csv").option("delimiter", "\t").option("header", "false").load(geojsonInputLocation)
-      polygonJsonDf.createOrReplaceTempView("polygontable")
-      val polygonDf = sparkSession.sql("select ST_GeomFromGeoJSON(polygontable._c0) as countyshape from polygontable")
+      val polygonJsonDf = loadCSV(geojsonInputLocation, tabCharacter)
+      polygonJsonDf.createOrReplaceTempView(polygonTable)
+      val polygonDf = sparkSession.sql(s"select ST_GeomFromGeoJSON(${polygonTable}._c0) as countyshape from ${polygonTable}")
       assert(polygonDf.count() == 1000)
     }
 

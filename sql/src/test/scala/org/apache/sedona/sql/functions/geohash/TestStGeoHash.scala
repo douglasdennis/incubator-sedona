@@ -19,6 +19,7 @@
 package org.apache.sedona.sql.functions.geohash
 
 import org.apache.sedona.sql.{GeometrySample, TestBaseScala}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, expr}
 import org.scalatest.GivenWhenThen
 import org.scalatest.matchers.should.Matchers
@@ -27,6 +28,22 @@ import org.scalatest.matchers.should.Matchers
 class TestStGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen with Matchers{
 
   import sparkSession.implicits._
+
+  val idCol = "id"
+  val geomCol = "geom"
+  val geohashCol = "geohash"
+
+  def createGeometryDataFrame(data: Seq[Tuple2[Integer, Any]]): DataFrame = {
+    data.map{
+        case (id, geomWkt: String) => (id, wktReader.read(geomWkt))
+        case (id, _) => (id, null)
+      }.toDF(idCol, geomCol)
+  }
+
+  def applyGeoHash(df: DataFrame, resolution: Integer): DataFrame = df.withColumn(geohashCol, expr(s"ST_Geohash($geomCol, $resolution)"))
+
+  val calculatingGeoHash = "calculating geohash"
+  val geohashShouldBeNull = "geohash should be null"
 
   describe("should correctly calculate st geohash function for 10 precision"){
     it("should return geohash"){
@@ -43,11 +60,11 @@ class TestStGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen
         )
       ).map{
         case (id, geomWkt, expectedGeoHash) => (id, wktReader.read(geomWkt), expectedGeoHash)
-      }.toDF("id", "geom", "expected_geohash")
+      }.toDF(idCol, geomCol, "expected_geohash")
 
-      When("calculating ST_GeoHash")
-      val geoHash = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 10)"))
-        .withColumn("eq_geohash", col("geohash") === col("expected_geohash"))
+      When(calculatingGeoHash)
+      val geoHash = applyGeoHash(geometryDf, 10)
+        .withColumn("eq_geohash", col(geohashCol) === col("expected_geohash"))
         .select("eq_geohash")
         .distinct()
         .as[Boolean]
@@ -61,30 +78,24 @@ class TestStGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen
 
     it("should return null if column value is null"){
       Given("geometry df with null elements")
-      val geometryDataFrame = Seq(
-        (1, null)
-      ).toDF("id", "geom")
+      val geometryDataFrame = createGeometryDataFrame(Seq((1, null)))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDataFrame.withColumn("geohash", expr("ST_GeoHash(geom, 10)"))
+      When(calculatingGeoHash)
+      val geoHashDf = geometryDataFrame.withColumn(geohashCol, expr("ST_GeoHash(geom, 10)"))
 
       Then("result should be null")
-      geoHashDf.select("geohash").as[String].collect().head shouldBe null
+      geoHashDf.select(geohashCol).as[String].collect().head shouldBe null
     }
 
     it("should return geohash truncated to max value"){
       Given("geometry df")
-      val geometryDf = Seq(
-        (1, "POINT(21.427834 52.042576573)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(21.427834 52.042576573)")))
 
       When("calculating geohash with precision exceeding maximum allowed")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 21)"))
+      val geoHashDf = applyGeoHash(geometryDf, 21)
 
       Then("geohash should be truncated to maximum possible precision")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
       result.size shouldBe 1
 
       result.head shouldBe "u3r0pd53bxrjdsrz4fzj"
@@ -93,74 +104,55 @@ class TestStGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen
 
     it("should return empty string when precision is negative or equal 0"){
       Given("geometry df")
-      val geometryDf = Seq(
-        (1, "POINT(21.427834 52.042576573)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(21.427834 52.042576573)")))
 
       When("calculating geohash with precision exceeding maximum allowed")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 0)"))
+      val geoHashDf = applyGeoHash(geometryDf, 0)
 
       Then("geohash should be truncated to maximum possible precision")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
       result.size shouldBe 1
 
       result.head shouldBe ""
     }
 
     it("should not return null for 90 < long < 180 (SEDONA-123)") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(120.0 50.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with longitude greater than 90")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(120.0 50.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 12)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 12)
 
       Then("geohash should not be null / return expected result")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe "y8vk6wjr4et3"
     }
 
     it("should return expected value for boundary case of min lat/long") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(-180.0 -90.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with point at the minimum boundary")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(-180.0 -90.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 12)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 12)
 
       Then("geohash should return expected result")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe "000000000000"
     }
 
     it("should return expected value for boundary case of max lat/long") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(180.0 90.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with point at the maximum boundary")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(180.0 90.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 12)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 12)
 
       Then("geohash should return expected result")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe "zzzzzzzzzzzz"
@@ -169,76 +161,56 @@ class TestStGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen
 
   describe("should return null when geometry contains invalid coordinates") {
     it("should return null when longitude is less than -180") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(-190.0 50.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with longitude less than -180")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(-190.0 50.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 1)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 1)
 
-      Then("geohash should be null")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      Then(geohashShouldBeNull)
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe null
     }
 
     it("should return null when longitude is greater than 180") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(190.0 50.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with longitude greater than 180")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(190.0 50.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 1)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 1)
 
-      Then("geohash should be null")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      Then(geohashShouldBeNull)
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe null
     }
 
     it("should return null when latitude is less than -90") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(50.0 -100.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with latitude less than -90")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(50.0 -100.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 1)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 1)
 
-      Then("geohash should be null")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      Then(geohashShouldBeNull)
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe null
     }
 
     it("should return null when latitude is greater than 90") {
-      Given("geometry df")
-      val geometryDf = Seq(
-        // Format: (long, lat)
-        (1, "POINT(50.0 100.0)")
-      ).map{
-        case (id, geomWkt) => (id, wktReader.read(geomWkt))
-      }.toDF("id", "geom")
+      Given("geometry df with latitude greater than 90")
+      val geometryDf = createGeometryDataFrame(Seq((1, "POINT(50.0 100.0)")))
 
-      When("calculating geohash")
-      val geoHashDf = geometryDf.withColumn("geohash", expr("ST_GeoHash(geom, 1)"))
+      When(calculatingGeoHash)
+      val geoHashDf = applyGeoHash(geometryDf, 1)
 
-      Then("geohash should be null")
-      val result = geoHashDf.select("geohash").distinct().as[String].collect().toList
+      Then(geohashShouldBeNull)
+      val result = geoHashDf.select(geohashCol).distinct().as[String].collect().toList
 
       result.size shouldBe 1
       result.head shouldBe null

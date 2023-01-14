@@ -25,17 +25,26 @@ import org.scalatest.prop.{TableDrivenPropertyChecks, TableFor2, TableFor3, Tabl
 
 
 object Fixtures extends TableDrivenPropertyChecks {
+  val hash_u = "u"
+  val hash_u3nz = "u3nz"
+  val hash_3u0zgfwhg2v7rs3d3ykz = "3u0zgfwhg2v7rs3d3ykz"
+  val southPacificPoint = "POINT(-100.022131 -21.12314242)"
+  val southOfWarsawPoint = "POINT(21 52)"
+
+  val statementCol = "statement"
+  val precisionCol = "precision"
+
   val geometriesToCalculateGeoHash: TableFor4[String, String, Int, Option[String]] = Table(
-    ("statement", "input geometry", "precision", "expected geohash"),
-    ("Point with precision of 1", "POINT(21 52)", 1, Some("u")),
-    ("Point with precision of 2", "POINT(21 52)", 2, Some("u3")),
-    ("Point with precision of 4", "POINT(21 52)", 4, Some("u3nz")),
-    ("Point with precision of 10", "POINT(21 52)", 10, Some("u3nzvf79zq")),
-    ("Point with precision of 20", "POINT(21 52)", 20, Some("u3nzvf79zqwfmzesx7yv")),
-    ("Complex Point with precision of 1", "POINT(-100.022131 -21.12314242)", 1, Some("3")),
-    ("Complex Point with precision of 5", "POINT(-100.022131 -21.12314242)", 5, Some("3u0zg")),
-    ("Complex Point with precision of 10", "POINT(-100.022131 -21.12314242)", 10, Some("3u0zgfwhg2")),
-    ("Complex Point with precision of 21", "POINT(-100.022131 -21.12314242)", 20, Some("3u0zgfwhg2v7rs3d3ykz")),
+    (statementCol, "input geometry", precisionCol, "expected geohash"),
+    ("Point with precision of 1", southOfWarsawPoint, 1, Some(hash_u)),
+    ("Point with precision of 2", southOfWarsawPoint, 2, Some("u3")),
+    ("Point with precision of 4", southOfWarsawPoint, 4, Some(hash_u3nz)),
+    ("Point with precision of 10", southOfWarsawPoint, 10, Some("u3nzvf79zq")),
+    ("Point with precision of 20", southOfWarsawPoint, 20, Some("u3nzvf79zqwfmzesx7yv")),
+    ("Complex Point with precision of 1", southPacificPoint, 1, Some("3")),
+    ("Complex Point with precision of 5", southPacificPoint, 5, Some("3u0zg")),
+    ("Complex Point with precision of 10", southPacificPoint, 10, Some("3u0zgfwhg2")),
+    ("Complex Point with precision of 21", southPacificPoint, 20, Some(hash_3u0zgfwhg2v7rs3d3ykz)),
     ("Polygon with precision of 10", "POLYGON((0.5 0.5,5 0,5 5,0 5,0.5 0.5), (1.5 1,4 3,4 1,1.5 1))",
       10, Some("s03y0zh7w1")),
     ("Polygon with precision of 20", "POLYGON((0.5 0.5,5 0,5 5,0 5,0.5 0.5), (1.5 1,4 3,4 1,1.5 1))", 20,
@@ -47,18 +56,18 @@ object Fixtures extends TableDrivenPropertyChecks {
   )
 
   val geometriesFromGeoHash: TableFor4[String, String, Int, String] = Table(
-    ("statement", "input geohash", "precision", "expected geometry"),
-    ("geohash with precision of 0", "u", 0, "POLYGON ((-180 -90, -180 90, 180 90, 180 -90, -180 -90))"),
-    ("geohash with precision of 1", "u", 1, "POLYGON((0 45,0 90,45 90,45 45,0 45))"),
+    (statementCol, "input geohash", precisionCol, "expected geometry"),
+    ("geohash with precision of 0", hash_u, 0, "POLYGON ((-180 -90, -180 90, 180 90, 180 -90, -180 -90))"),
+    ("geohash with precision of 1", hash_u, 1, "POLYGON((0 45,0 90,45 90,45 45,0 45))"),
     ("geohash with precision of 2", "u3", 2, "POLYGON((11.25 50.625,11.25 56.25,22.5 56.25,22.5 50.625,11.25 50.625))"),
-    ("geohash with precision of 3", "u3nz", 3, "POLYGON((19.6875 50.625,19.6875 52.03125,21.09375 52.03125,21.09375 50.625,19.6875 50.625))"),
-    ("geohash with precision of 4", "u3nz", 4, "POLYGON((20.7421875 51.85546875,20.7421875 52.03125,21.09375 52.03125,21.09375 51.85546875,20.7421875 51.85546875))"),
-    ("geohash with precision of 10", "3u0zgfwhg2v7rs3d3ykz", 10, "POLYGON ((-100.02213835716248 -21.123147010803223, -100.02213835716248 -21.123141646385193, -100.02212762832642 -21.123141646385193, -100.02212762832642 -21.123147010803223, -100.02213835716248 -21.123147010803223))"),
-    ("geohash with precision of 20", "3u0zgfwhg2v7rs3d3ykz", 20, "POLYGON ((-100.02213100000023 -21.123142420000125, -100.02213100000023 -21.123142419999965, -100.02213099999992 -21.123142419999965, -100.02213099999992 -21.123142420000125, -100.02213100000023 -21.123142420000125))")
+    ("geohash with precision of 3", hash_u3nz, 3, "POLYGON((19.6875 50.625,19.6875 52.03125,21.09375 52.03125,21.09375 50.625,19.6875 50.625))"),
+    ("geohash with precision of 4", hash_u3nz, 4, "POLYGON((20.7421875 51.85546875,20.7421875 52.03125,21.09375 52.03125,21.09375 51.85546875,20.7421875 51.85546875))"),
+    ("geohash with precision of 10", hash_3u0zgfwhg2v7rs3d3ykz, 10, "POLYGON ((-100.02213835716248 -21.123147010803223, -100.02213835716248 -21.123141646385193, -100.02212762832642 -21.123141646385193, -100.02212762832642 -21.123147010803223, -100.02213835716248 -21.123147010803223))"),
+    ("geohash with precision of 20", hash_3u0zgfwhg2v7rs3d3ykz, 20, "POLYGON ((-100.02213100000023 -21.123142420000125, -100.02213100000023 -21.123142419999965, -100.02213099999992 -21.123142419999965, -100.02213099999992 -21.123142420000125, -100.02213100000023 -21.123142420000125))")
   )
 
   val invalidGeoHashes: TableFor3[String, String, Int] = Table(
-    ("statement", "invalid geohash", "precision"),
+    (statementCol, "invalid geohash", precisionCol),
     ("geohash with non asci characters", "-+=123sda", 3),
     ("negative value of precision", "asdi", -3)
   )
