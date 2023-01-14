@@ -116,7 +116,7 @@ case class ST_Pixelize(inputExpressions: Seq[Expression])
     }
     assert(pixels.size() > 0)
     import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
-    return new GenericArrayData(pixels.asScala.map(f=> {
+    new GenericArrayData(pixels.asScala.map(f => {
       val out = new ByteArrayOutputStream()
       val kryo = new Kryo()
       val pixelSerializer = new PixelSerializer()

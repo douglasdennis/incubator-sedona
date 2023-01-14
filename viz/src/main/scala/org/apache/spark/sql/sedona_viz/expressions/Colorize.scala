@@ -39,24 +39,25 @@ case class ST_Colorize(inputExpressions: Seq[Expression])
       // Fetch the color from the third input string
       // supported color can be found at: https://github.com/beryx/awt-color-factory#example-usage
       var color = ColorFactory.valueOf(inputExpressions(2).eval(input).asInstanceOf[UTF8String].toString)
-      return color.getRGB
+      color.getRGB
+    } else {
+      var weight = 0.0
+      try {
+        weight = inputExpressions(0).eval(input).asInstanceOf[Double]
+      }
+      catch {
+        case e: java.lang.ClassCastException => weight = inputExpressions(0).eval(input).asInstanceOf[Long]
+      }
+      var max = 0.0
+      try {
+        max = inputExpressions(1).eval(input).asInstanceOf[Double]
+      }
+      catch {
+        case e: java.lang.ClassCastException => max = inputExpressions(1).eval(input).asInstanceOf[Long]
+      }
+      val normalizedWeight: Double = weight * 255.0 / max
+      GenericColoringRule.EncodeToRGB(normalizedWeight)
     }
-    var weight = 0.0
-    try {
-      weight = inputExpressions(0).eval(input).asInstanceOf[Double]
-    }
-    catch {
-      case e: java.lang.ClassCastException => weight = inputExpressions(0).eval(input).asInstanceOf[Long]
-    }
-    var max = 0.0
-    try {
-      max = inputExpressions(1).eval(input).asInstanceOf[Double]
-    }
-    catch {
-      case e: java.lang.ClassCastException => max = inputExpressions(1).eval(input).asInstanceOf[Long]
-    }
-    val normalizedWeight: Double = weight * 255.0 / max
-    GenericColoringRule.EncodeToRGB(normalizedWeight)
   }
 
   override def dataType: DataType = IntegerType
