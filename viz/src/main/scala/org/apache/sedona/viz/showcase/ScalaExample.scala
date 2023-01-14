@@ -99,8 +99,8 @@ object ScalaExample extends App {
   if (buildScatterPlot(scatterPlotOutputPath) && buildHeatMap(heatMapOutputPath)
     && buildChoroplethMap(choroplethMapOutputPath) && parallelFilterRenderStitch(parallelFilterRenderStitchOutputPath + "-stitched")
     && parallelFilterRenderNoStitch(parallelFilterRenderStitchOutputPath) && earthdataVisualization(earthdataScatterPlotOutputPath))
-    System.out.println("All 5 Demos have passed.")
-  else System.out.println("Demos failed.")
+    Logger.getLogger(ScalaExample.getClass).info("All 5 Demos have passed.")
+  else Logger.getLogger(ScalaExample.getClass).info("Demos failed.")
 
   /**
     * Builds the scatter plot.
