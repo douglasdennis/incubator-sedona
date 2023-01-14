@@ -57,6 +57,7 @@ object ScalaExample extends App {
   val demoOutputPath = "target/demo"
   val userDir = System.getProperty("user.dir")
   val scatterPlotOutputPath = userDir + DirectoryDivider + demoOutputPath + "/scatterplot"
+  var ConfFile = new FileInputStream(resourcePath + "babylon.point.properties")
   prop.load(ConfFile)
   val heatMapOutputPath = userDir + DirectoryDivider + demoOutputPath + "/heatmap"
   val choroplethMapOutputPath = userDir + DirectoryDivider + demoOutputPath + "/choroplethmap"
@@ -94,7 +95,6 @@ object ScalaExample extends App {
   val HDFDataVariableList = Array("LST", "QC", "Error_LST", "Emis_31", "Emis_32")
   val HDFswitchXY = true
   val urlPrefix = userDir + "/src/test/resources/modis/"
-  var ConfFile = new FileInputStream(resourcePath + "babylon.point.properties")
 
   if (buildScatterPlot(scatterPlotOutputPath) && buildHeatMap(heatMapOutputPath)
     && buildChoroplethMap(choroplethMapOutputPath) && parallelFilterRenderStitch(parallelFilterRenderStitchOutputPath + "-stitched")
