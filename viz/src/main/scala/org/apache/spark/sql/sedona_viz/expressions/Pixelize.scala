@@ -18,6 +18,8 @@
  */
 package org.apache.spark.sql.sedona_viz.expressions
 
+import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
+
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.Output
 import org.apache.commons.io.output.ByteArrayOutputStream
@@ -115,7 +117,7 @@ case class ST_Pixelize(inputExpressions: Seq[Expression])
       }
     }
     assert(pixels.size() > 0)
-    import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
+
     new GenericArrayData(pixels.asScala.map(f => {
       val out = new ByteArrayOutputStream()
       val kryo = new Kryo()
