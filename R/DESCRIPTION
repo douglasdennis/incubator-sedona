@@ -27,6 +27,7 @@ Depends:
     R (>= 3.2)
 Imports:
     rlang,
+    dbplyr (== 2.2.1),
     sparklyr (>= 1.3),
     dbplyr (>= 1.1.0),
     cli,
