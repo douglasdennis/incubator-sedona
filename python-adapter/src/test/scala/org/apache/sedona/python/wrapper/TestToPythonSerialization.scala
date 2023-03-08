@@ -22,8 +22,8 @@ package org.apache.sedona.python.wrapper
 import org.apache.sedona.python.wrapper.translation.{FlatPairRddConverter, GeometryRddConverter, ListPairRddConverter}
 import org.apache.spark.api.java.JavaPairRDD
 import org.scalatest.Matchers
-import org.apache.sedona.python.wrapper.utils.implicits._
-import scala.jdk.CollectionConverters._
+import org.apache.sedona.python.wrapper.utils.implicits._ // scalastyle:ignore underscore.import
+import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
 
 
 class TestToPythonSerialization extends SparkUtil with GeometrySample with Matchers {

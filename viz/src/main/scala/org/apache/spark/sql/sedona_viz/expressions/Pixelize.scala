@@ -18,12 +18,15 @@
  */
 package org.apache.spark.sql.sedona_viz.expressions
 
+import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
+import scala.collection.mutable
+
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.Output
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.sedona.sql.utils.GeometrySerializer
 import org.apache.sedona.viz.core.Serde.PixelSerializer
-import org.apache.sedona.viz.utils.{ColorizeOption, RasterizationUtils}
+import org.apache.sedona.viz.utils.{ColorizeOption, RasterizationUtils, Pixel}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -31,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData}
 import org.apache.spark.sql.sedona_viz.UDT.PixelUDT
 import org.apache.spark.sql.types.{ArrayType, DataType}
-import org.locationtech.jts.geom._
+import org.locationtech.jts.geom.{Envelope, Geometry, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon}
 
 case class ST_Pixelize(inputExpressions: Seq[Expression])
   extends Expression with CodegenFallback with Logging {
@@ -46,39 +49,33 @@ case class ST_Pixelize(inputExpressions: Seq[Expression])
     val reverseCoordinate = false
     val pixels = inputGeometry match {
       case geometry: LineString => {
-        RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, inputGeometry.asInstanceOf[LineString], reverseCoordinate)
+        RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, inputGeometry.asInstanceOf[LineString], reverseCoordinate).asScala
       }
       case geometry: Polygon => {
-        RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, inputGeometry.asInstanceOf[Polygon], reverseCoordinate)
+        RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, inputGeometry.asInstanceOf[Polygon], reverseCoordinate).asScala
       }
       case geometry: Point => {
-        RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, inputGeometry.asInstanceOf[Point], ColorizeOption.NORMAL, reverseCoordinate)
+        RasterizationUtils.FindPixelCoordinates(
+          resolutionX,
+          resolutionY,
+          boundary,
+          inputGeometry.asInstanceOf[Point],
+          ColorizeOption.NORMAL,
+          reverseCoordinate).asScala
       }
       case geometry: MultiLineString => {
-        var manyPixels = RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(0).asInstanceOf[LineString], reverseCoordinate)
-        for (i <- 1 to geometry.getNumGeometries - 1) {
-          manyPixels.addAll(RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(i).asInstanceOf[LineString], reverseCoordinate))
-        }
-        manyPixels
+        getMultiGeometryPixels(resolutionX, resolutionY, boundary, geometry, reverseCoordinate)
       }
       case geometry: MultiPolygon => {
-        var manyPixels = RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(0).asInstanceOf[Polygon], reverseCoordinate)
-        for (i <- 1 to geometry.getNumGeometries - 1) {
-          manyPixels.addAll(RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(i).asInstanceOf[Polygon], reverseCoordinate))
-        }
-        manyPixels
+        getMultiGeometryPixels(resolutionX, resolutionY, boundary, geometry, reverseCoordinate)
       }
       case geometry: MultiPoint => {
-        var manyPixels = RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(0).asInstanceOf[Point], ColorizeOption.NORMAL, reverseCoordinate)
-        for (i <- 1 to geometry.getNumGeometries - 1) {
-          manyPixels.addAll(RasterizationUtils.FindPixelCoordinates(resolutionX, resolutionY, boundary, geometry.getGeometryN(i).asInstanceOf[Point], ColorizeOption.NORMAL, reverseCoordinate))
-        }
-        manyPixels
+        getMultiGeometryPixels(resolutionX, resolutionY, boundary, geometry, reverseCoordinate)
       }
     }
-    assert(pixels.size() > 0)
-    import scala.jdk.CollectionConverters._
-    return new GenericArrayData(pixels.asScala.map(f=> {
+    assert(pixels.size > 0)
+
+    new GenericArrayData(pixels.map(f => {
       val out = new ByteArrayOutputStream()
       val kryo = new Kryo()
       val pixelSerializer = new PixelSerializer()
@@ -88,6 +85,84 @@ case class ST_Pixelize(inputExpressions: Seq[Expression])
       new GenericArrayData(out.toByteArray)
     }).toArray)
   }
+
+  protected def getMultiGeometryPixels(
+      resolutionX: Integer,
+      resolutionY: Integer,
+      boundary: Envelope,
+      geometry: MultiLineString,
+      reverseCoordinate: Boolean): mutable.Seq[Tuple2[Pixel, java.lang.Double]] = {
+    var manyPixels =
+      RasterizationUtils.FindPixelCoordinates(
+        resolutionX,
+        resolutionY,
+        boundary,
+        geometry.getGeometryN(0).asInstanceOf[LineString],
+        reverseCoordinate)
+    for {i <- 1 to geometry.getNumGeometries - 1} {
+      manyPixels.addAll(
+        RasterizationUtils.FindPixelCoordinates(
+          resolutionX,
+          resolutionY,
+          boundary,
+          geometry.getGeometryN(i).asInstanceOf[LineString],
+          reverseCoordinate))
+    }
+    manyPixels.asScala
+  }
+
+  protected def getMultiGeometryPixels(
+      resolutionX: Integer,
+      resolutionY: Integer,
+      boundary: Envelope,
+      geometry: MultiPoint,
+      reverseCoordinate: Boolean): mutable.Seq[Tuple2[Pixel, java.lang.Double]] = {
+    var manyPixels =
+      RasterizationUtils.FindPixelCoordinates(
+        resolutionX,
+        resolutionY,
+        boundary,
+        geometry.getGeometryN(0).asInstanceOf[Point],
+        ColorizeOption.NORMAL,
+        reverseCoordinate)
+    for {i <- 1 to geometry.getNumGeometries - 1} {
+      manyPixels.addAll(
+        RasterizationUtils.FindPixelCoordinates(
+          resolutionX,
+          resolutionY,
+          boundary,
+          geometry.getGeometryN(i).asInstanceOf[Point],
+          ColorizeOption.NORMAL,
+          reverseCoordinate))
+    }
+    manyPixels.asScala
+  }
+
+  protected def getMultiGeometryPixels(
+      resolutionX: Integer,
+      resolutionY: Integer,
+      boundary: Envelope,
+      geometry: MultiPolygon,
+      reverseCoordinate: Boolean): mutable.Seq[Tuple2[Pixel, java.lang.Double]] = {
+    var manyPixels =
+      RasterizationUtils.FindPixelCoordinates(
+        resolutionX,
+        resolutionY,
+        boundary,
+        geometry.getGeometryN(0).asInstanceOf[Polygon],
+        reverseCoordinate)
+    for {i <- 1 to geometry.getNumGeometries - 1} {
+      manyPixels.addAll(
+        RasterizationUtils.FindPixelCoordinates(
+          resolutionX,
+          resolutionY,
+          boundary,
+          geometry.getGeometryN(i).asInstanceOf[Polygon],
+          reverseCoordinate))
+    }
+    manyPixels.asScala
+  }
+
   override def dataType: DataType = ArrayType(new PixelUDT)
   override def children: Seq[Expression] = inputExpressions
 

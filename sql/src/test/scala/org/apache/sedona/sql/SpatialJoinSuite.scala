@@ -61,12 +61,13 @@ class SpatialJoinSuite extends TestBaseScala with TableDrivenPropertyChecks {
       "ST_Distance(df2.geom, df1.geom) <= 1.0"
     )
 
-    var spatialJoinPartitionSide = "left"
+    val left = "left"
+    var spatialJoinPartitionSide = left
     try {
-      spatialJoinPartitionSide = sparkSession.sparkContext.getConf.get(spatialJoinPartitionSideConfKey, "left")
+      spatialJoinPartitionSide = sparkSession.sparkContext.getConf.get(spatialJoinPartitionSideConfKey, left)
       forAll (joinConditions) { joinCondition =>
         it(s"should join two dataframes with $joinCondition") {
-          sparkSession.sparkContext.getConf.set(spatialJoinPartitionSideConfKey, "left")
+          sparkSession.sparkContext.getConf.set(spatialJoinPartitionSideConfKey, left)
           prepareTempViewsForTestData()
           val result = sparkSession.sql(s"SELECT df1.id, df2.id FROM df1 JOIN df2 ON $joinCondition")
           val expected = buildExpectedResult(joinCondition)
@@ -136,16 +137,18 @@ class SpatialJoinSuite extends TestBaseScala with TableDrivenPropertyChecks {
   }
 
   private def prepareTempViewsForTestData(): (DataFrame, DataFrame) = {
+    val geomCol = "geom"
+    val idCol = "id"
     val df1 = sparkSession.read.format("csv").option("header", "false").option("delimiter", testDataDelimiter)
       .load(spatialJoinLeftInputLocation)
-      .withColumn("id", col("_c0").cast(IntegerType))
-      .withColumn("geom", ST_GeomFromText(new Column("_c2")))
-      .select("id", "geom")
+      .withColumn(idCol, col("_c0").cast(IntegerType))
+      .withColumn(geomCol, ST_GeomFromText(new Column("_c2")))
+      .select(idCol, geomCol)
     val df2 = sparkSession.read.format("csv").option("header", "false").option("delimiter", testDataDelimiter)
       .load(spatialJoinRightInputLocation)
-      .withColumn("id", col("_c0").cast(IntegerType))
-      .withColumn("geom", ST_GeomFromText(new Column("_c2")))
-      .select("id", "geom")
+      .withColumn(idCol, col("_c0").cast(IntegerType))
+      .withColumn(geomCol, ST_GeomFromText(new Column("_c2")))
+      .select(idCol, geomCol)
     df1.createOrReplaceTempView("df1")
     df2.createOrReplaceTempView("df2")
     (df1, df2)

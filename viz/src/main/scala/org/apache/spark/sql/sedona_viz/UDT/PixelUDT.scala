@@ -49,7 +49,7 @@ private[sql] class PixelUDT extends UserDefinedType[Pixel] {
         val input = new Input(in)
         val pixel = pixelSerializer.read(kryo, input, classOf[Pixel])
         input.close()
-        return pixel
+        pixel
       }
     }
   }

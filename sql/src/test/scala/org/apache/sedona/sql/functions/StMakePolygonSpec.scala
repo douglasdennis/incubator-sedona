@@ -25,22 +25,27 @@ import org.scalatest.{GivenWhenThen, Matchers}
 class StMakePolygonSpec extends TestBaseScala with Matchers with GeometrySample with GivenWhenThen {
   import sparkSession.implicits._
 
+  val geomCol = "geom"
+  val polyCol = "poly"
+  val makePolygonExpr = expr(s"ST_MakePolygon($geomCol)")
+  val asTextExpr = expr(s"ST_AsText($polyCol)")
+
   describe("should pass ST_MAkePolygon"){
 
     it("should return null while using ST_MakePolygon when geometry is empty"){
       Given("DataFrame with null line strings")
       val geometryTable = sparkSession.sparkContext.parallelize(1 to 10).toDF()
-        .withColumn("geom", lit(null))
+        .withColumn(geomCol, lit(null))
 
       When("using ST_MakePolygon on null geometries")
       val geometryTableWithPolygon = geometryTable
-        .withColumn("polygon", expr("ST_MakePolygon(geom)"))
+        .withColumn(polyCol, makePolygonExpr)
 
       Then("no exception should be raised")
 
       And("null geometry should be assigned")
       val result = geometryTableWithPolygon
-        .select(when(col("polygon").isNull, lit(null)).otherwise(expr("ST_AsText(polygon)")))
+        .select(when(col(polyCol).isNull, lit(null)).otherwise(asTextExpr))
         .as[String].distinct().collect()
         .toList
 
@@ -55,14 +60,14 @@ class StMakePolygonSpec extends TestBaseScala with Matchers with GeometrySample 
         "LINESTRING(-5 8, -6 1, -8 6, -2 5, -6 1, -5 8)",
         "LINESTRING(-3 -7, -8 -7, -3 -2, -8 -2, -3 -7)"
 
-      ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+      ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
       When("using ST_MakePolygon on those geometries")
       val geometryDfWithPolygon = geometryTable
-        .withColumn("poly", expr("ST_MakePolygon(geom)"))
+        .withColumn(polyCol, makePolygonExpr)
 
       Then("valid Polygon should be created")
-      geometryDfWithPolygon.selectExpr("ST_AsText(poly)").as[String]
+      geometryDfWithPolygon.select(asTextExpr).as[String]
         .collect() should contain theSameElementsAs Seq(
         "POLYGON ((75 29, 77 29, 77 29, 75 29))",
         "POLYGON ((-5 8, -6 1, -8 6, -2 5, -6 1, -5 8))",
@@ -81,12 +86,12 @@ class StMakePolygonSpec extends TestBaseScala with Matchers with GeometrySample 
         case (geom, geometries) => Tuple2(
           wktReader.read(geom),
           geometries.map(wktReader.read)
-        )}.toDF("geom", "holes")
+        )}.toDF(geomCol, "holes")
 
       When("using ST_MakePolygon on those geometries")
       val transformedGeometriesWithHoles = geometryDataFrame
-        .withColumn("poly", expr("ST_MakePolygon(geom, holes)"))
-        .selectExpr("ST_AsText(poly)")
+        .withColumn(polyCol, expr(f"ST_MakePolygon($geomCol, holes)"))
+        .select(asTextExpr)
         .as[String]
         .collect()
         .toList
@@ -104,15 +109,15 @@ class StMakePolygonSpec extends TestBaseScala with Matchers with GeometrySample 
       val geometryDataFrame = Seq(
         "LINESTRING(2 1,3 4,4 6)",
         "POINT(21 52)"
-      ).map(geom => Tuple1(wktReader.read(geom))).toDF("geom")
+      ).map(geom => Tuple1(wktReader.read(geom))).toDF(geomCol)
 
       When("calling ST_MakePolygon")
       val geometryDfWithPolygon = geometryDataFrame
-        .withColumn("poly", expr("ST_MakePolygon(geom)"))
+        .withColumn(polyCol, makePolygonExpr)
 
       Then("result should be null")
-      val result = geometryDfWithPolygon.select("poly")
-        .select(when(col("poly").isNull, lit(null)).otherwise(expr("ST_AsText(poly)")))
+      val result = geometryDfWithPolygon.select(polyCol)
+        .select(when(col(polyCol).isNull, lit(null)).otherwise(asTextExpr))
         .as[String].distinct().collect()
         .toList
 

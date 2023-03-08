@@ -23,7 +23,7 @@ import net.razorvine.pickle.Unpickler
 import net.razorvine.pickle.objects.ClassDict
 import org.locationtech.jts.geom.Envelope
 
-import scala.jdk.CollectionConverters._
+import scala.jdk.CollectionConverters._ // scalastyle:ignore underscore.import
 
 object EnvelopeAdapter {
   def getFromPython(bytes: Array[Byte]): java.util.List[Envelope] = {

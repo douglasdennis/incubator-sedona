@@ -42,6 +42,9 @@ import java.nio.file.Files
 
 class GeoParquetSpatialFilterPushDownSuite extends TestBaseScala with TableDrivenPropertyChecks {
 
+  val regionCol = "region"
+  val idCol = "id"
+
   val tempDir: String = Files.createTempDirectory("sedona_geoparquet_test_").toFile.getAbsolutePath
   val geoParquetDir: String = tempDir + "/geoparquet"
   var df: DataFrame = _
@@ -159,8 +162,8 @@ class GeoParquetSpatialFilterPushDownSuite extends TestBaseScala with TableDrive
       case None => (0 until 4)
     }
     assert(expectedPreservedRegions == preservedRegions)
-    val expectedResult = df.where(condition).orderBy("region", "id").select("region", "id").collect()
-    val actualResult = dfFiltered.orderBy("region", "id").select("region", "id").collect()
+    val expectedResult = df.where(condition).orderBy(regionCol, idCol).select(regionCol, idCol).collect()
+    val actualResult = dfFiltered.orderBy(regionCol, idCol).select(regionCol, idCol).collect()
     assert(expectedResult sameElements actualResult)
   }
 
@@ -181,6 +184,8 @@ class GeoParquetSpatialFilterPushDownSuite extends TestBaseScala with TableDrive
 }
 
 object GeoParquetSpatialFilterPushDownSuite {
+  val regionCol = "region"
+  
   case class TestDataItem(id: Int, region: Int, geom: Geometry)
 
   /**
@@ -219,7 +224,7 @@ object GeoParquetSpatialFilterPushDownSuite {
    * @param path path to write GeoParquet files
    */
   def writeTestDataAsGeoParquet(testData: DataFrame, path: String): Unit = {
-    testData.coalesce(1).write.partitionBy("region").format("geoparquet").save(path)
+    testData.coalesce(1).write.partitionBy(regionCol).format("geoparquet").save(path)
   }
 
   /**

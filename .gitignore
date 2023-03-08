@@ -15,5 +15,6 @@
 /.bloop/
 /.metals/
 /.vscode/
+/.scala-build
 .Rproj.user
 __pycache__

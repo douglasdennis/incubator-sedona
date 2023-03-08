@@ -100,7 +100,7 @@ public class VisualizationPartitioner
      * @param partitionY
      * @param coordinateX
      * @param coordinateY
-     * @return
+     * @return 2D partition ID
      */
     public static Tuple2<Integer, Integer> Calculate2DPartitionId(int resolutionX, int resolutionY, int partitionX, int partitionY, int coordinateX, int coordinateY)
     {

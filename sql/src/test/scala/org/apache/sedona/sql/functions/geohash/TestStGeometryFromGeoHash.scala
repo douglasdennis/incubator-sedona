@@ -26,6 +26,8 @@ import org.scalatest.matchers.should.Matchers
 class TestStGeometryFromGeoHash extends TestBaseScala with GeometrySample with GivenWhenThen with Matchers{
   import sparkSession.implicits._
 
+  val geohashCol = "geohash"
+
   describe("should create geometries based on hash using ST_GeomFromGeoHash function"){
     it("should create polygon geometry based on geohash"){
       Given("data frame with geohash values")
@@ -35,7 +37,7 @@ class TestStGeometryFromGeoHash extends TestBaseScala with GeometrySample with G
         ("2131s12fd", "POLYGON ((-178.4168529510498 -37.69778251647949, -178.4168529510498 -37.697739601135254, -178.41681003570557 -37.697739601135254, -178.41681003570557 -37.69778251647949, -178.4168529510498 -37.69778251647949))")
       )
 
-      val geoHashDf = geoHashCollection.toDF("geohash", "expected_geom")
+      val geoHashDf = geoHashCollection.toDF(geohashCol, "expected_geom")
 
       When("creating Geometry from geohash")
       val result = geoHashDf.selectExpr(
@@ -56,7 +58,7 @@ class TestStGeometryFromGeoHash extends TestBaseScala with GeometrySample with G
           "POLYGON ((-180 -39.375, -180 -33.75, -168.75 -33.75, -168.75 -39.375, -180 -39.375))")
       )
 
-      val geoHashDf = geoHashCollection.toDF("geohash", "expected_geom")
+      val geoHashDf = geoHashCollection.toDF(geohashCol, "expected_geom")
 
       When("creating Geometry from geohash")
       val result = geoHashDf.selectExpr(
@@ -73,11 +75,11 @@ class TestStGeometryFromGeoHash extends TestBaseScala with GeometrySample with G
       Given("data frame with geo hash")
       val invalidGeoHashDf = Seq(
         ("aidft35")
-      ).toDF("geohash")
+      ).toDF(geohashCol)
 
       val validGeoHash = Seq(
         ("sd")
-      ).toDF("geohash")
+      ).toDF(geohashCol)
 
       When("using StGeomFromGeoHash function with invalid arguments")
       val geometryDfWithInvalidGeoHash = invalidGeoHashDf
